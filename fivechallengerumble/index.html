@@ -1,0 +1,3348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5 Challenge Rumble</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14101f;
+    --panel: #1f1832;
+    --panel-light: #2a2144;
+    --pink: #ff3d81;
+    --cyan: #34e2e2;
+    --gold: #ffcc33;
+    --danger: #ff4d4d;
+    --text: #f2eefc;
+    --text-dim: #b6adcf;
+    --secret-red: #a30000;
+  }
+  @font-face {
+    font-family: 'EndingFont';
+    src: url('Media/font.ttf') format('truetype');
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(255,61,129,0.12), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(52,226,226,0.10), transparent 45%),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Rubik', sans-serif;
+    overflow-x: hidden;
+  }
+  h1,h2,h3{ font-family:'Bangers', cursive; letter-spacing: 1px; margin: 0 0 8px 0; }
+  #app{
+    min-height: 100vh;
+    display:flex; align-items:center; justify-content:center;
+    padding: 24px;
+  }
+  .screen{ width: 100%; max-width: 760px; }
+  .hidden{ display:none !important; }
+
+  .panel{
+    background: linear-gradient(180deg, var(--panel), var(--panel-light));
+    border: 2px solid rgba(255,255,255,0.06);
+    border-radius: 18px;
+    padding: 32px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+  }
+
+  /* ---- Menu ---- */
+  .title{
+    font-size: 56px;
+    text-align:center;
+    color: var(--pink);
+    text-shadow: 0 0 18px rgba(255,61,129,0.55), 0 0 2px #fff;
+    margin-bottom: 4px;
+  }
+  .title .num{ color: var(--cyan); text-shadow: 0 0 18px rgba(52,226,226,0.6); }
+  .subtitle{
+    text-align:center; color: var(--text-dim); margin-bottom: 28px; font-size: 14px;
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+  .rumble-pips{
+    display:flex; justify-content:center; gap:10px; margin-bottom: 26px;
+  }
+  .pip{
+    width:14px; height:14px; border-radius:50%;
+    background: rgba(255,255,255,0.12);
+    border: 2px solid rgba(255,255,255,0.2);
+  }
+  .pip.filled{ background: var(--gold); border-color: var(--gold); box-shadow: 0 0 10px var(--gold); }
+  .pip.current{ background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+
+  .points-box{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    background: rgba(255,204,51,0.08);
+    border: 1px solid rgba(255,204,51,0.35);
+    border-radius: 12px;
+    padding: 12px 20px;
+    margin-bottom: 26px;
+    font-size: 18px;
+  }
+  .points-box b{ color: var(--gold); font-size: 22px; }
+
+  .btn-row{ display:flex; gap:14px; flex-wrap: wrap; justify-content:center; }
+  button{
+    font-family:'Rubik', sans-serif; font-weight: 700; font-size: 16px;
+    cursor: pointer; border: none; border-radius: 12px;
+    padding: 14px 28px; transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+    color: #0e0a17;
+  }
+  button:active{ transform: scale(0.96); }
+  .btn-primary{ background: linear-gradient(180deg, var(--pink), #e02e6d); color: #fff; box-shadow: 0 8px 0 #a11f4c, 0 10px 20px rgba(255,61,129,.35);}
+  .btn-primary:hover{ filter: brightness(1.08); }
+  .btn-secondary{ background: linear-gradient(180deg, var(--cyan), #1fb9b9); box-shadow: 0 8px 0 #157979, 0 10px 20px rgba(52,226,226,.25); }
+  .btn-secondary:hover{ filter: brightness(1.08); }
+  .btn-ghost{ background: transparent; border: 2px solid rgba(255,255,255,0.25); color: var(--text); box-shadow:none; padding: 12px 24px;}
+  .btn-ghost:hover{ border-color: rgba(255,255,255,0.5); }
+  .btn-danger{ background: linear-gradient(180deg, var(--danger), #c92e2e); color:#fff; box-shadow: 0 8px 0 #8f1f1f, 0 10px 20px rgba(255,77,77,.3); }
+  button:disabled{ opacity:0.4; cursor:not-allowed; box-shadow:none; transform:none; }
+
+  #menu-message{
+    min-height: 22px; text-align:center; color: var(--danger);
+    font-weight: 700; margin-bottom: 14px; font-size: 14px;
+  }
+
+  /* ---- Shop ---- */
+  .shop-item{
+    display:flex; align-items:center; justify-content:space-between;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .shop-item .info b{ font-size: 18px; display:block; margin-bottom:4px; color: var(--gold); }
+  .shop-item .info span{ color: var(--text-dim); font-size: 13px; }
+
+  /* ---- Challenge shell ---- */
+  #challenge-progress{
+    text-align:center; font-family:'Bangers'; letter-spacing:1px;
+    color: var(--cyan); font-size: 22px; margin-bottom: 14px;
+  }
+  #challenge-content p{ color: var(--text-dim); text-align:center; margin-top:0; }
+  #challenge-content h2{ text-align:center; font-size: 34px; color: var(--pink); }
+
+  /* ---- Sniper ---- */
+  #sniper-timer{ text-align:center; font-weight:700; margin-bottom:10px; color: var(--gold); }
+  #sniper-area{
+    position: relative; width:100%; height: 420px;
+    background: radial-gradient(circle at 50% 50%, #241a3d, #100c1c);
+    border-radius: 14px; overflow:hidden; cursor: crosshair;
+    border: 2px solid rgba(255,255,255,0.08);
+  }
+  .sniper-dot{
+    position:absolute; width:20px; height:20px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #ff9a9a, var(--danger) 60%);
+    box-shadow: 0 0 12px rgba(255,77,77,0.8);
+    transform: translate(-50%,-50%);
+    pointer-events:none;
+  }
+  .sniper-dot.dashing{
+    background: radial-gradient(circle at 35% 30%, #ffffff, #9ad1ff 60%);
+    box-shadow: 0 0 18px rgba(154,209,255,0.9);
+  }
+
+  /* ---- Typing ---- */
+  #typing-sentence{
+    text-align:center; font-size: 22px; margin: 10px 0 20px 0; line-height:1.6;
+    letter-spacing: 1px;
+  }
+  #typing-sentence .done{ color: var(--cyan); }
+  #typing-sentence .current{ color: var(--gold); text-decoration: underline; }
+  #typing-sentence .todo{ color: var(--text-dim); }
+  #typing-keyboard{
+    display:flex; flex-wrap: wrap; gap:8px; justify-content:center;
+    background: rgba(0,0,0,0.2); border-radius: 14px; padding: 16px;
+  }
+  .key-btn{
+    min-width: 40px; padding: 10px 12px; background: var(--panel-light);
+    color: var(--text); border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 4px 0 rgba(0,0,0,0.4);
+    font-size: 15px;
+  }
+  .key-btn:hover{ background: #382a5c; }
+  .key-btn.wide{ min-width: 120px; }
+  #typing-legend{
+    display:flex; flex-wrap: wrap; gap: 18px; justify-content:center;
+    margin-top: 14px; font-size: 13px; color: var(--text-dim);
+  }
+  #typing-legend span{ display:flex; align-items:center; gap:6px; }
+  .legend-swatch{
+    display:inline-block; width:12px; height:12px; border-radius: 3px;
+    box-shadow: 0 0 6px rgba(0,0,0,0.4);
+  }
+
+  /* ---- Clicker ---- */
+  #clicker-status{ text-align:center; font-weight:700; margin-bottom:10px; color: var(--gold); }
+  #clicker-area{
+    position: relative; width:100%; height: 420px;
+    background: radial-gradient(circle at 50% 50%, #241a3d, #100c1c);
+    border-radius: 14px; overflow:hidden;
+    border: 2px solid rgba(255,255,255,0.08);
+  }
+  #clicker-btn{
+    position:absolute; width: 90px; height: 46px;
+    background: linear-gradient(180deg, var(--pink), #e02e6d);
+    color:#fff; border-radius: 10px; box-shadow: 0 6px 0 #a11f4c;
+    font-weight:700; font-size:14px;
+  }
+
+  /* ---- Color Picker ---- */
+  #target-swatch{
+    width: 140px; height: 90px; margin: 0 auto 20px auto;
+    border-radius: 12px; border: 3px solid rgba(255,255,255,0.5);
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+  }
+  #color-grid{
+    display:grid; grid-template-columns: repeat(8, 1fr); gap:8px;
+  }
+  .color-swatch{
+    aspect-ratio: 1/1; border-radius: 8px; cursor:pointer;
+    border: 2px solid rgba(255,255,255,0.15);
+    transition: transform .1s ease;
+  }
+  .color-swatch:hover{ transform: scale(1.08); border-color: #fff; }
+
+  /* ---- What Time ---- */
+  #whattime-timer{ text-align:center; font-weight:700; margin-bottom:16px; color: var(--gold); }
+  .time-inputs{
+    display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin-bottom: 18px;
+  }
+  .time-inputs label{
+    display:flex; flex-direction:column; font-size:12px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 1px; gap:6px;
+  }
+  .time-inputs input{
+    width: 84px; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);
+    background: #0f0b1a; color: var(--text); font-size: 16px; text-align:center;
+  }
+  #wt-feedback{ text-align:center; min-height:20px; color: var(--danger); font-weight:700; }
+  .center-btn{ display:flex; justify-content:center; margin-top:8px; }
+
+  #blind-overlay{
+    position: fixed; inset: 0; pointer-events:none; z-index: 9999;
+    background: radial-gradient(circle 140px at 50% 50%, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.97) 78%);
+    display:none;
+  }
+  #blind-overlay.active{ display:block; }
+
+  #shake-wrap{
+    position: relative;
+    will-change: transform;
+  }
+
+  #rush-timer-display{
+    position: fixed; top: 14px; right: 18px; z-index: 9998;
+    font-family:'Bangers'; letter-spacing:1px; color: var(--pink);
+    background: rgba(0,0,0,0.55); border: 1px solid rgba(255,61,129,0.5);
+    border-radius: 10px; padding: 8px 14px; font-size: 18px;
+  }
+
+  .key-btn.spotted{
+    outline: 2px solid rgba(176,107,255,0.5); outline-offset: 2px;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.4), 0 0 8px rgba(176,107,255,0.5);
+  }
+
+  #sniper-shield{ text-align:center; font-weight:700; color: var(--cyan); margin-bottom: 6px; }
+
+  .shop-item.locked{ opacity: 0.5; }
+  .shop-item .info small{ display:block; margin-top:4px; color: var(--pink); font-size:11px; text-transform:uppercase; letter-spacing:1px; }
+
+  .you-win-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background: var(--bg); color: var(--gold); font-family:'Bangers'; font-size: 64px;
+    text-shadow: 0 0 30px rgba(255,204,51,0.6);
+    text-align:center; padding: 20px;
+  }
+  *{
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  html.mystery-green{
+    filter: grayscale(1) sepia(1) hue-rotate(60deg) saturate(6);
+  }
+  #mystery-btn{
+    position: fixed; left: 16px; bottom: 16px; z-index: 9999;
+    width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(180deg, #3ddc5a, #1f9e3d);
+    color: #fff; font-family:'Bangers'; font-size: 18px;
+    box-shadow: 0 6px 0 #146b28, 0 8px 16px rgba(31,158,61,0.4);
+  }
+  #mystery-btn:active{ transform: translateY(4px); box-shadow: 0 2px 0 #146b28; }
+  #mystery-timer{
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 9999; font-family:'Bangers'; font-size: 32px; color: #eaffea;
+    text-shadow: 0 0 14px #2fd94f, 0 0 4px #000;
+    transition: top 1.2s cubic-bezier(.6,-0.3,.9,.4), opacity 1.2s;
+  }
+  #mystery-timer.falling{ top: 120vh; opacity: 0; }
+  #mystery-void{
+    position: fixed; inset: 0; z-index: 10000; pointer-events: none;
+    background: #1f9e3d; opacity: 0; transition: opacity 10s linear;
+  }
+  #mystery-void.active{ opacity: 1; pointer-events: all; }
+  .title .num{ cursor: pointer; display:inline-block; }
+  .title.flipped{ transform: rotate(180deg); }
+  #the5-popup{
+    position: fixed; right: 16px; bottom: 16px; z-index: 9998;
+    background: var(--panel-light); border: 1px solid rgba(255,204,51,0.4);
+    color: var(--gold); font-family:'Bangers'; font-size: 15px;
+    padding: 10px 16px; border-radius: 10px; box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+    cursor: default;
+  }
+  #the5-popup.clickable{ cursor: pointer; }
+  .golden-5{
+    position: fixed; font-family:'Bangers'; font-size: 46px; color: var(--gold);
+    text-shadow: 0 0 16px rgba(255,204,51,0.9); cursor: pointer; z-index: 500;
+    user-select:none; background:none; border:none; padding:0;
+  }
+  #the5-end-screen{
+    position: fixed; inset: 0; z-index: 10001; display:flex; align-items:center; justify-content:center;
+  }
+  #the5-end-screen .big5{
+    font-family:'Bangers'; font-size: 180px; color: var(--cyan);
+    text-shadow: 0 0 40px rgba(52,226,226,0.8);
+  }
+
+  /* ---- Secret hydration bar ---- */
+  #subtitle-none{ cursor: pointer; text-decoration: underline dotted; text-decoration-color: rgba(255,255,255,0.25); }
+  #secret-bar-wrap{
+    position: fixed; top: 12px; left: 12px; width: 160px; height: 14px; z-index: 9997;
+    background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px; overflow: hidden;
+  }
+  #secret-bar-fill{
+    height: 100%; width: 100%; background: #2e8bff;
+    box-shadow: 0 0 10px rgba(46,139,255,0.8);
+    transition: width 0.3s linear;
+  }
+
+  /* ---- Boss Rush ---- */
+  .boss-health-wrap{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    margin-bottom: 14px;
+  }
+  .boss-health-label{ font-family:'Bangers'; color: var(--danger); letter-spacing:1px; font-size:15px; }
+  .boss-health-pips{ display:flex; gap:6px; }
+  .boss-health-pip{
+    width:22px; height:22px; border-radius:6px;
+    background: var(--danger); box-shadow: 0 0 8px rgba(255,77,77,0.7);
+    border: 1px solid rgba(255,255,255,0.3);
+  }
+  .boss-health-pip.empty{ background: rgba(255,255,255,0.08); box-shadow:none; }
+  .boss-hearts-wrap{
+    display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom: 10px;
+  }
+  .boss-heart{ font-size: 22px; }
+
+  .boss-yellow-circle{
+    position:absolute; width:60px; height:60px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #fff7c2, var(--gold) 65%);
+    box-shadow: 0 0 22px rgba(255,204,51,0.85);
+    opacity: 0.5;
+    transform: translate(-50%,-50%);
+    pointer-events:none; z-index: 2;
+  }
+  .boss-yellow-circle.shielded{
+    background: radial-gradient(circle at 35% 30%, #d7f7f7, var(--cyan) 65%);
+    box-shadow: 0 0 22px rgba(52,226,226,0.85);
+  }
+
+  #color-grid.boss-grid{ gap: 26px; }
+
+  .boss-fullscreen-area{
+    position: fixed; inset: 0; z-index: 9500;
+    background: radial-gradient(circle at 50% 50%, #241a3d, #100c1c);
+    overflow:hidden; cursor: crosshair;
+  }
+  .boss-fullscreen-hud{
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 9501; text-align:center;
+  }
+  #clicker-btn.boss-btn{ width: 110px; height: 56px; font-size:15px; }
+
+  .wt-boss-field{
+    position: fixed; z-index: 9501; display:flex; flex-direction:column; gap:6px;
+    text-align:center; transition: left 0.4s ease, top 0.4s ease;
+  }
+  .wt-boss-field label{
+    font-size:11px; color: var(--text-dim); text-transform:uppercase; letter-spacing:1px;
+  }
+  .wt-boss-field input{
+    width: 84px; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);
+    background: #0f0b1a; color: var(--text); font-size: 16px; text-align:center;
+  }
+  #wt-boss-clock.shake-extreme{ animation: wtShakeExtreme 0.15s infinite; }
+  @keyframes wtShakeExtreme{
+    0%{ transform: translate(0,0) rotate(0deg); }
+    20%{ transform: translate(-9px,7px) rotate(-4deg); }
+    40%{ transform: translate(8px,-6px) rotate(3deg); }
+    60%{ transform: translate(-7px,-8px) rotate(-3deg); }
+    80%{ transform: translate(9px,6px) rotate(4deg); }
+    100%{ transform: translate(0,0) rotate(0deg); }
+  }
+
+  #typing-math{
+    text-align:center; font-size: 26px; margin: 10px 0; color: var(--gold); font-family:'Bangers'; letter-spacing:1px;
+  }
+  #typing-math-input{
+    display:block; margin: 0 auto 14px auto; width: 120px; padding:10px; text-align:center;
+    border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#0f0b1a; color:var(--text); font-size:16px;
+  }
+
+  /* ---- Music track volume ---- */
+  .track-volume-row{
+    display:flex; align-items:center; gap:10px; margin-top:8px;
+  }
+  .track-volume-row span{ font-size: 12px; color: var(--text-dim); }
+  .track-volume-row input[type=range]{
+    flex:1; accent-color: var(--pink); cursor:pointer;
+  }
+
+  /* ---- Secret 20-boss ending ---- */
+  #secret-vignette{
+    position: fixed; inset: 0; z-index: 9600; pointer-events: none;
+    opacity: 0;
+    box-shadow: inset 0 0 0px 0px rgba(163,0,0,0);
+    transition: opacity 6s ease-in, box-shadow 6s ease-in;
+  }
+  #secret-vignette.active{
+    opacity: 1;
+    box-shadow: inset 0 0 240px 150px rgba(163,0,0,0.7);
+  }
+  #secret-flash{
+    position: fixed; inset: 0; z-index: 9700; background:#fff;
+    opacity: 0; pointer-events: none; transition: opacity .5s ease-out;
+  }
+  #secret-flash.flashing{ opacity: 1; transition: none; }
+  #secret-boss-timer{
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 9500; font-family:'Bangers'; font-size: 30px; color: #ffdede;
+    text-shadow: 0 0 14px var(--secret-red), 0 0 4px #000;
+    letter-spacing: 1px;
+  }
+  #secret-timeout-overlay{
+    position: fixed; inset: 0; z-index: 9550; pointer-events: none;
+    opacity: 0; background: #000;
+  }
+  #secret-timeout-overlay.active{ opacity: 1; pointer-events: all; }
+  .btn-finish{
+    background: linear-gradient(180deg, #ff2020, #a30000);
+    color:#fff; font-size:18px; letter-spacing:1px;
+    box-shadow: 0 8px 0 #6e0000, 0 0 24px rgba(255,20,20,.65);
+    animation: finish-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes finish-pulse{
+    0%,100%{ filter:brightness(1); }
+    50%{ filter:brightness(1.25); }
+  }
+  #secret-ending-overlay{
+    position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;
+    background: var(--secret-red);
+    opacity: 0; transition: opacity 5s linear;
+    text-align:center; padding: 24px;
+  }
+  #secret-ending-overlay.active{ opacity: 1; pointer-events: all; }
+  .ending-font{
+    font-family: 'EndingFont', 'Bangers', cursive;
+    color: #000;
+    opacity: 0;
+    transition: opacity 3s linear;
+  }
+  .ending-font.show{ opacity: 1; }
+  #secret-congrats{ font-size: 54px; }
+  #secret-ending-sub{ font-size: 24px; }
+</style>
+</head>
+<body oncontextmenu="return false;" onselectstart="return false;">
+<div id="mystery-void"></div>
+<div id="blind-overlay"></div>
+<div id="rush-timer-display" class="hidden"></div>
+<button id="mystery-btn" class="hidden">???</button>
+<div id="mystery-timer" class="hidden"></div>
+<div id="the5-popup" class="hidden"></div>
+<div id="secret-bar-wrap" class="hidden"><div id="secret-bar-fill"></div></div>
+<div id="secret-vignette"></div>
+<div id="secret-flash"></div>
+<div id="secret-boss-timer" class="hidden"></div>
+<div id="secret-timeout-overlay"></div>
+<div id="secret-ending-overlay">
+  <div id="secret-congrats" class="ending-font">CONGRATS</div>
+  <div id="secret-ending-sub" class="ending-font">you got the hardest ending in the game</div>
+</div>
+<div id="shake-wrap">
+<div id="app">
+
+  <!-- MENU -->
+  <div id="screen-menu" class="screen">
+    <div class="panel">
+      <div class="title" id="menu-title"><span class="num" id="title-5">5</span> Challenge Rumble</div>
+      <div class="subtitle">Beat all five. Lose <span id="subtitle-none">none</span>.</div>
+      <div class="rumble-pips" id="menu-pips"></div>
+      <div id="menu-message"></div>
+      <div class="points-box"><span id="points-label">Exp(ie) Points:</span> <b id="points-display">0</b></div>
+      <div class="btn-row">
+        <button class="btn-ghost hidden" id="music-btn">Music</button>
+        <button class="btn-primary" id="start-btn">Start</button>
+        <button class="btn-secondary" id="shop-btn">Shop</button>
+        <button class="btn-danger btn-finish hidden" id="secret-finish-btn">FINISH</button>
+        <button class="btn-ghost hidden" id="mode-btn">Mode: Normal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHOP -->
+  <div id="screen-shop" class="screen hidden">
+    <div class="panel" style="max-height: 82vh; overflow-y:auto;">
+      <h2 style="text-align:center; color:var(--cyan);">Shop</h2>
+      <div class="shop-item">
+        <div class="info">
+          <b>Winner!</b>
+          <span>"You beat the game!" costs 40 Exp(ie) Points. Warning: this ends everything.</span>
+        </div>
+        <button class="btn-danger" id="buy-winner-btn">Buy</button>
+      </div>
+      <div id="shop-items"></div>
+      <div class="shop-item">
+        <div class="info">
+          <b>Canceled</b>
+          <span>You messed up big time... Cost: 5 points.</span>
+        </div>
+        <button class="btn-danger" id="buy-canceled-btn">Buy</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" id="shop-back-btn">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MUSIC -->
+  <div id="screen-music" class="screen hidden">
+    <div class="panel" style="max-height: 82vh; overflow-y:auto;">
+      <h2 style="text-align:center; color:var(--cyan);">Musical</h2>
+
+      <div id="music-mode-select" class="hidden">
+        <p style="text-align:center; color:var(--text-dim);">Choose how music should work. You can switch later.</p>
+        <div class="btn-row">
+          <button class="btn-primary" id="music-choose-global">Global</button>
+          <button class="btn-secondary" id="music-choose-challenge">Challenge Specific</button>
+        </div>
+      </div>
+
+      <div id="music-global-panel" class="hidden">
+        <p style="color:var(--text-dim); text-align:center;">Tracks here play constantly, everywhere, on a loop.</p>
+        <div class="btn-row">
+          <input type="file" id="music-global-upload" accept="audio/*" multiple>
+        </div>
+        <div id="music-global-list" style="margin-top:14px;"></div>
+        <label style="display:flex; align-items:center; gap:8px; margin: 18px 0; color: var(--text-dim); justify-content:center;">
+          <input type="checkbox" id="music-global-shuffle"> Shuffle
+        </label>
+        <div class="btn-row">
+          <button class="btn-ghost" id="music-switch-to-challenge">Switch to Challenge Specific</button>
+        </div>
+      </div>
+
+      <div id="music-challenge-panel" class="hidden">
+        <p style="color:var(--text-dim); text-align:center;">Pick a challenge, then upload tracks that will loop only during that challenge.</p>
+        <div class="btn-row" id="music-challenge-select" style="margin-bottom:14px;"></div>
+        <div class="btn-row">
+          <input type="file" id="music-challenge-upload" accept="audio/*" multiple>
+        </div>
+        <div id="music-challenge-list" style="margin-top:14px;"></div>
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn-ghost" id="music-switch-to-global">Switch to Global</button>
+        </div>
+      </div>
+
+      <div class="btn-row" style="margin-top:18px;">
+        <button class="btn-ghost" id="music-back-btn">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHALLENGE -->
+  <div id="screen-challenge" class="screen hidden">
+    <div class="panel">
+      <div id="challenge-progress"></div>
+      <div id="challenge-content"></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+/* ============ DISABLE SELECTION / CONTEXT MENU ============ */
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('selectstart', e => e.preventDefault());
+document.addEventListener('dragstart', e => e.preventDefault());
+
+/* ============ GLOBAL STATE ============ */
+let points = 0;
+let remainingChallenges = [];
+let challengeNumber = 0;
+let currentCleanup = null;
+let currentMode = 'normal';
+let rushTimeLeft = 0;
+let rushInterval = null;
+let endlessAwardedMilestone = 0; // highest 5-multiple already paid out mid-run (not used, payout is on end)
+
+let mode555 = false;
+let title5Clicks = 0;
+let mode555Streak = 0;
+let the5PopupShown = false;
+let the5PopupStage = 'find'; // 'find' -> waiting for golden 5 to be found; 'click' -> waiting for popup click
+let goldenFiveArmedThisRound = false;
+
+/* ---- Secret 20-boss ending state ---- */
+let secretShopEntryCount = 0;
+let secretEndingActive = false;
+let secretRunActive = false;
+let secretBossPoints = 0;
+let secretBossIndex = 0;
+let secretBossTimerLeft = 0;
+let secretBossTimerInterval = null;
+
+const owned = {
+  clicked: false,
+  spotted: false,
+  prepTime: false,
+  shield: false,
+  eyeSpy: false,
+  necromancy: false,
+  extraTime: false,
+  singularLess: false,
+  modes: false,
+  rushed: false,
+  blindness: false,
+  endless: false,
+  bonusPoints: false,
+  musical: false,
+  noob: false,
+  speedster: false,
+  bossSlayer: false
+};
+
+const SHOP_ITEMS = [
+  { key:'clicked', name:'Clicked', cost:1, desc:'Clicker: every click has a 20% chance the button duplicates into another clickable button. Duplicates keep their distance from each other, just like the sniper dots.' },
+  { key:'spotted', name:'Spotted', cost:2, desc:'Typing: the on-screen button you need to press next gets a semi-transparent purple outline.' },
+  { key:'prepTime', name:'Prep Time', cost:1, desc:'What Time?: 2 random inputs (never Seconds) get auto-filled with the correct value.' },
+  { key:'shield', name:'Shield', cost:2, desc:'Sniper: you have 1 shield. If a dot touches you, you lose the shield instead of losing, and that dot disappears.' },
+  { key:'eyeSpy', name:'Eye Spy', cost:1, desc:'Color Picker: 2 correct colors are selected instead of 1. Picking either one wins.' },
+  { key:'necromancy', name:'Necromancy', cost:2, desc:'Whenever you would lose, you have a 30% chance to instead not lose, and move on as if you had won.' },
+  { key:'extraTime', name:'Extra Time', cost:1, desc:'You get 2 extra seconds on every timed challenge.' },
+  { key:'singularLess', name:'Singular Less', cost:1, desc:'Clicker: you only need to click 1 less time to win.' },
+  { key:'modes', name:'Modes', cost:1, desc:'Does nothing by itself, but adds a Mode button to the main menu so you can switch modes. Default is Normal.' },
+  { key:'rushed', name:'Rushed', cost:1, desc:'Unlocks Rush Mode: beat all 5 challenges within 2 minutes and 30 seconds total. Winning gives 2 Exp(ie) Points instead of 1.', requires:'modes' },
+  { key:'blindness', name:'Blindness', cost:1, desc:'Unlocks Blind Mode: you can only see a small circle around your cursor, everywhere, including the main menu. Winning gives 2 Exp(ie) Points instead of 1.', requires:'modes' },
+  { key:'forgetful', name:'Forgetful', cost:1, desc:'I cant remember!', requires:'modes' },
+  { key:'endless', name:'Endless', cost:2, desc:'Unlocks Endless Mode: challenges never stop coming. Losing before challenge 5 still loses all your Exp(ie) Points. Making it to challenge 5+ pays out Exp(ie) Points based on how far you got, plus a bonus point every 10 challenges.', requires:'modes' },
+  { key:'troubling', name:'Troubling', cost:5, desc:'No way anyone will beat it.', requires:'modes' },
+  { key:'noob', name:'Noob', cost:1, desc:'"Im bad at games"', requires:'modes' },
+  { key:'speedster', name:'Speedster', cost:1, desc:'Im fast as fuh boi', requires:'modes' },
+  { key:'bossSlayer', name:'Boss Slayer', cost:3, desc:'Boss Rush? Pathetic.', requires:'modes' },
+  { key:'bonusPoints', name:'Bonus Points', cost:1, desc:'Whenever you win (in Endless, this checks every 5 challenges), you have a 30% chance to earn 1 bonus Exp(ie) Point.' },
+  { key:'musical', name:'Musical', cost:4, desc:'Allows you to play music.' }
+];
+
+const ALL_CHALLENGES = ['sniper','typing','clicker','colorpicker','whattime'];
+const CHALLENGE_NAMES = {
+  sniper: 'Sniper',
+  typing: 'Typing',
+  clicker: 'Clicker',
+  colorpicker: 'Color Picker',
+  whattime: 'What Time?'
+};
+
+/* ============ HELPERS ============ */
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+/* ============ PRACTICE MODE POINT GATE ============ */
+function awardPoints(amount){
+  if(currentMode === 'practice') return;
+  points += amount;
+}
+
+/* ============ FAST MODE HELPERS ============ */
+function fastActive(){ return currentMode === 'fast'; }
+function ivMul(){ return fastActive() ? 0.5 : 1; } // multiply setInterval/setTimeout durations by this
+function dtMul(){ return fastActive() ? 2 : 1; } // multiply per-frame delta-time by this
+function currentMusicPlaybackRate(){ return fastActive() ? 2 : 1; }
+
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function updatePointsDisplay(){
+  if(secretEndingActive){
+    document.getElementById('points-label').textContent = 'BOSS Points:';
+    document.getElementById('points-display').textContent = secretBossPoints;
+  } else {
+    document.getElementById('points-label').textContent = 'Exp(ie) Points:';
+    document.getElementById('points-display').textContent = points;
+  }
+  checkMysteryButton();
+  checkFinishButton();
+}
+
+function renderPips(container, filledCount, currentIndex){
+  container.innerHTML = '';
+  for(let i=0;i<5;i++){
+    const pip = document.createElement('div');
+    pip.className = 'pip';
+    if(i < filledCount) pip.classList.add('filled');
+    else if(i === currentIndex) pip.classList.add('current');
+    container.appendChild(pip);
+  }
+}
+
+function flashMessage(msg){
+  const el = document.getElementById('menu-message');
+  el.textContent = msg;
+  setTimeout(()=>{ if(el.textContent === msg) el.textContent=''; }, 4000);
+}
+
+/* ============ MYSTERY GREEN EVENT ============ */
+let mysteryUsedThisSession = false;
+let mysteryActive = false;
+let mysteryTimeLeft = 0;
+let mysteryInterval = null;
+
+function checkMysteryButton(){
+  if(secretEndingActive) return;
+  if(mysteryUsedThisSession || mysteryActive) return;
+  const btn = document.getElementById('mystery-btn');
+  if(points >= 100) btn.classList.remove('hidden');
+  else btn.classList.add('hidden');
+}
+
+function startMysteryEvent(){
+  if(mysteryActive || mysteryUsedThisSession) return;
+  mysteryActive = true;
+  document.getElementById('mystery-btn').classList.add('hidden');
+  document.documentElement.classList.add('mystery-green');
+  mysteryTimeLeft = 90;
+  const disp = document.getElementById('mystery-timer');
+  disp.classList.remove('hidden');
+  disp.classList.remove('falling');
+  function render(){
+    const m = Math.floor(mysteryTimeLeft/60);
+    const s = String(mysteryTimeLeft%60).padStart(2,'0');
+    disp.textContent = `${m}:${s}`;
+  }
+  render();
+  mysteryInterval = setInterval(()=>{
+    mysteryTimeLeft--;
+    render();
+    if(mysteryTimeLeft <= 0){
+      clearInterval(mysteryInterval);
+      mysteryInterval = null;
+      mysteryFail();
+    }
+  }, 1000);
+}
+
+function mysterySucceed(){
+  if(!mysteryActive) return;
+  mysteryActive = false;
+  mysteryUsedThisSession = true;
+  if(mysteryInterval){ clearInterval(mysteryInterval); mysteryInterval = null; }
+  document.documentElement.classList.remove('mystery-green');
+  document.getElementById('mystery-timer').classList.add('hidden');
+  document.getElementById('mystery-btn').classList.add('hidden');
+  awardPoints(500);
+  updatePointsDisplay();
+}
+
+function mysteryFail(){
+  const disp = document.getElementById('mystery-timer');
+  disp.classList.add('falling');
+  setTimeout(()=>{
+    document.getElementById('mystery-void').classList.add('active');
+  }, 1200);
+}
+
+document.getElementById('mystery-btn').addEventListener('click', startMysteryEvent);
+
+/* ============ 555 MODE ============ */
+document.getElementById('title-5').addEventListener('click', ()=>{
+  title5Clicks++;
+  if(title5Clicks >= 5){
+    title5Clicks = 0;
+    mode555 = !mode555;
+    document.getElementById('menu-title').classList.toggle('flipped', mode555);
+    if(!mode555){
+      mode555Streak = 0;
+    }
+  }
+});
+
+function updateThe5Popup(){
+  const popup = document.getElementById('the5-popup');
+  if(!the5PopupShown){
+    popup.classList.add('hidden');
+    popup.classList.remove('clickable');
+    return;
+  }
+  popup.classList.remove('hidden');
+  if(the5PopupStage === 'find'){
+    popup.textContent = 'Find the 5 then come back';
+    popup.classList.remove('clickable');
+  } else {
+    popup.textContent = 'Click me';
+    popup.classList.add('clickable');
+  }
+}
+
+document.getElementById('the5-popup').addEventListener('click', ()=>{
+  if(the5PopupStage !== 'click') return;
+  triggerThe5Ending();
+});
+
+function spawnGoldenFive(){
+  const btn = document.createElement('button');
+  btn.className = 'golden-5';
+  btn.textContent = '5';
+  const top = 8 + Math.random()*80;
+  const left = 5 + Math.random()*85;
+  btn.style.top = top+'vh';
+  btn.style.left = left+'vw';
+  btn.addEventListener('click', ()=>{
+    btn.remove();
+    awardPoints(1);
+    updatePointsDisplay();
+    the5PopupStage = 'click';
+    updateThe5Popup();
+    currentCleanup = null;
+    stopRushTimer();
+    stopScreenShake();
+    remainingChallenges = [];
+    challengeNumber = 0;
+    goMenu();
+    flashMessage(currentMode === 'practice' ? "You found the 5! (Practice mode: no points earned.)" : "You found the 5! +1 Exp(ie) Point.");
+  });
+  document.body.appendChild(btn);
+}
+
+function triggerThe5Ending(){
+  document.getElementById('the5-popup').classList.add('hidden');
+  document.querySelectorAll('body > *').forEach(el=>{
+    if(el.id !== 'the5-popup') el.style.display = 'none';
+  });
+  const end = document.createElement('div');
+  end.id = 'the5-end-screen';
+  end.innerHTML = '<div class="big5">5</div>';
+  document.body.appendChild(end);
+}
+
+/* ============ SHOP ============ */
+function renderShop(){
+  const container = document.getElementById('shop-items');
+  container.innerHTML = '';
+  SHOP_ITEMS.forEach(item=>{
+    const row = document.createElement('div');
+    row.className = 'shop-item';
+    const locked = item.requires && !owned[item.requires];
+    if(locked) row.classList.add('locked');
+    row.innerHTML = `
+      <div class="info">
+        <b>${item.name}${owned[item.key] ? ' (Owned)' : ''}</b>
+        <span>${item.desc} Cost: ${item.cost} point${item.cost===1?'':'s'}.</span>
+        ${locked ? '<small>Requires Modes</small>' : ''}
+      </div>
+    `;
+    const btn = document.createElement('button');
+    btn.className = 'btn-secondary';
+    if(owned[item.key]){
+      btn.textContent = 'Owned';
+      btn.disabled = true;
+    } else if(locked){
+      btn.textContent = 'Locked';
+      btn.disabled = true;
+    } else {
+      btn.textContent = 'Buy';
+      btn.addEventListener('click', ()=>{
+        if(points >= item.cost){
+          points -= item.cost;
+          owned[item.key] = true;
+          updatePointsDisplay();
+          renderShop();
+          updateModeButtonVisibility();
+          updateMusicButtonVisibility();
+          flashMessage(`Bought ${item.name}!`);
+        } else {
+          flashMessage("Not enough Exp(ie) Points!");
+        }
+      });
+    }
+    row.appendChild(btn);
+    container.appendChild(row);
+  });
+}
+
+/* ============ MUSICAL ============ */
+const musicAudio = new Audio();
+musicAudio.loop = false;
+
+let musicModeChosen = false;
+let musicMode = null; // 'global' | 'challenge'
+
+let globalMusicTracks = []; // { name, url }
+let globalMusicIndex = -1;
+let globalMusicShuffle = false;
+
+let challengeMusicTracks = { sniper:[], typing:[], clicker:[], colorpicker:[], whattime:[] };
+let challengeMusicIndex = { sniper:-1, typing:-1, clicker:-1, colorpicker:-1, whattime:-1 };
+let selectedMusicChallenge = 'sniper';
+let activeChallengeMusicKey = null;
+
+function updateMusicButtonVisibility(){
+  const btn = document.getElementById('music-btn');
+  if(secretEndingActive){
+    btn.classList.add('hidden');
+    musicAudio.pause();
+    return;
+  }
+  if(owned.musical) btn.classList.remove('hidden');
+  else btn.classList.add('hidden');
+}
+
+function pickNextGlobalIndex(){
+  if(globalMusicTracks.length === 0) return -1;
+  if(globalMusicTracks.length === 1) return 0;
+  if(globalMusicShuffle){
+    let next;
+    do { next = randInt(0, globalMusicTracks.length-1); } while(next === globalMusicIndex);
+    return next;
+  }
+  return (globalMusicIndex + 1) % globalMusicTracks.length;
+}
+
+function startGlobalTrack(index){
+  if(index < 0 || !globalMusicTracks[index]) return;
+  globalMusicIndex = index;
+  const track = globalMusicTracks[index];
+  musicAudio.src = track.url;
+  musicAudio.volume = track.volume ?? 1;
+  musicAudio.playbackRate = currentMusicPlaybackRate();
+  musicAudio.play().catch(()=>{});
+}
+
+function ensureGlobalMusicPlaying(){
+  if(musicMode !== 'global') return;
+  if(globalMusicTracks.length === 0) return;
+  if(!musicAudio.paused && musicAudio.src) return;
+  startGlobalTrack(globalMusicIndex >= 0 && globalMusicTracks[globalMusicIndex] ? globalMusicIndex : pickNextGlobalIndex());
+}
+
+function playChallengeMusic(key){
+  activeChallengeMusicKey = key;
+  if(musicMode !== 'challenge') return;
+  const tracks = challengeMusicTracks[key] || [];
+  if(tracks.length === 0){ musicAudio.pause(); return; }
+  challengeMusicIndex[key] = 0;
+  musicAudio.src = tracks[0].url;
+  musicAudio.volume = tracks[0].volume ?? 1;
+  musicAudio.playbackRate = currentMusicPlaybackRate();
+  musicAudio.play().catch(()=>{});
+}
+
+function stopChallengeMusic(){
+  activeChallengeMusicKey = null;
+  if(musicMode === 'challenge') musicAudio.pause();
+}
+
+musicAudio.addEventListener('ended', ()=>{
+  if(musicMode === 'global'){
+    const next = pickNextGlobalIndex();
+    if(next >= 0) startGlobalTrack(next);
+  } else if(musicMode === 'challenge' && activeChallengeMusicKey){
+    const key = activeChallengeMusicKey;
+    const tracks = challengeMusicTracks[key] || [];
+    if(tracks.length === 0) return;
+    challengeMusicIndex[key] = (challengeMusicIndex[key] + 1) % tracks.length;
+    const track = tracks[challengeMusicIndex[key]];
+    musicAudio.src = track.url;
+    musicAudio.volume = track.volume ?? 1;
+    musicAudio.playbackRate = currentMusicPlaybackRate();
+    musicAudio.play().catch(()=>{});
+  }
+});
+
+function renderMusicScreen(){
+  const selectDiv = document.getElementById('music-mode-select');
+  const globalDiv = document.getElementById('music-global-panel');
+  const challengeDiv = document.getElementById('music-challenge-panel');
+  selectDiv.classList.add('hidden');
+  globalDiv.classList.add('hidden');
+  challengeDiv.classList.add('hidden');
+  if(!musicModeChosen){
+    selectDiv.classList.remove('hidden');
+    return;
+  }
+  if(musicMode === 'global'){
+    globalDiv.classList.remove('hidden');
+    document.getElementById('music-global-shuffle').checked = globalMusicShuffle;
+    renderGlobalMusicList();
+  } else {
+    challengeDiv.classList.remove('hidden');
+    renderChallengeMusicSelect();
+    renderChallengeMusicList();
+  }
+}
+
+function renderGlobalMusicList(){
+  const list = document.getElementById('music-global-list');
+  list.innerHTML = '';
+  if(globalMusicTracks.length === 0){
+    list.innerHTML = '<p style="color:var(--text-dim); text-align:center;">No tracks uploaded yet.</p>';
+    return;
+  }
+  globalMusicTracks.forEach((t, i)=>{
+    const row = document.createElement('div');
+    row.className = 'shop-item';
+    row.innerHTML = `
+      <div class="info">
+        <b>${t.name}${i===globalMusicIndex ? ' (Playing)' : ''}</b>
+        <div class="track-volume-row">
+          <span>Vol</span>
+          <input type="range" min="0" max="100" value="${Math.round((t.volume ?? 1)*100)}" class="track-volume-slider">
+        </div>
+      </div>
+    `;
+    row.querySelector('.track-volume-slider').addEventListener('input', (e)=>{
+      t.volume = (+e.target.value) / 100;
+      if(i === globalMusicIndex) musicAudio.volume = t.volume;
+    });
+    const btn = document.createElement('button');
+    btn.className = 'btn-danger';
+    btn.textContent = 'Remove';
+    btn.addEventListener('click', ()=>{
+      const wasCurrent = (i === globalMusicIndex);
+      URL.revokeObjectURL(t.url);
+      globalMusicTracks.splice(i, 1);
+      if(wasCurrent){
+        globalMusicIndex = -1;
+        musicAudio.pause();
+        ensureGlobalMusicPlaying();
+      } else if(globalMusicIndex > i){
+        globalMusicIndex--;
+      }
+      renderGlobalMusicList();
+    });
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+
+function renderChallengeMusicSelect(){
+  const wrap = document.getElementById('music-challenge-select');
+  wrap.innerHTML = '';
+  ALL_CHALLENGES.forEach(key=>{
+    const btn = document.createElement('button');
+    btn.className = (key === selectedMusicChallenge) ? 'btn-secondary' : 'btn-ghost';
+    btn.textContent = CHALLENGE_NAMES[key];
+    btn.addEventListener('click', ()=>{
+      selectedMusicChallenge = key;
+      renderMusicScreen();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+function renderChallengeMusicList(){
+  const list = document.getElementById('music-challenge-list');
+  list.innerHTML = '';
+  const key = selectedMusicChallenge;
+  const tracks = challengeMusicTracks[key];
+  if(tracks.length === 0){
+    list.innerHTML = `<p style="color:var(--text-dim); text-align:center;">No tracks uploaded yet for ${CHALLENGE_NAMES[key]}.</p>`;
+    return;
+  }
+  tracks.forEach((t, i)=>{
+    const row = document.createElement('div');
+    row.className = 'shop-item';
+    const playing = (activeChallengeMusicKey === key && musicMode === 'challenge' && i === challengeMusicIndex[key]);
+    row.innerHTML = `
+      <div class="info">
+        <b>${t.name}${playing ? ' (Playing)' : ''}</b>
+        <div class="track-volume-row">
+          <span>Vol</span>
+          <input type="range" min="0" max="100" value="${Math.round((t.volume ?? 1)*100)}" class="track-volume-slider">
+        </div>
+      </div>
+    `;
+    row.querySelector('.track-volume-slider').addEventListener('input', (e)=>{
+      t.volume = (+e.target.value) / 100;
+      if(activeChallengeMusicKey === key && musicMode === 'challenge' && challengeMusicIndex[key] === i){
+        musicAudio.volume = t.volume;
+      }
+    });
+    const btn = document.createElement('button');
+    btn.className = 'btn-danger';
+    btn.textContent = 'Remove';
+    btn.addEventListener('click', ()=>{
+      tracks.splice(i, 1);
+      URL.revokeObjectURL(t.url);
+      if(challengeMusicIndex[key] >= tracks.length) challengeMusicIndex[key] = -1;
+      if(activeChallengeMusicKey === key && musicMode === 'challenge') playChallengeMusic(key);
+      renderChallengeMusicList();
+    });
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('music-btn').addEventListener('click', ()=>{
+  showScreen('screen-music');
+  renderMusicScreen();
+});
+document.getElementById('music-back-btn').addEventListener('click', ()=>showScreen('screen-menu'));
+
+document.getElementById('music-choose-global').addEventListener('click', ()=>{
+  musicModeChosen = true;
+  musicMode = 'global';
+  renderMusicScreen();
+  ensureGlobalMusicPlaying();
+});
+document.getElementById('music-choose-challenge').addEventListener('click', ()=>{
+  musicModeChosen = true;
+  musicMode = 'challenge';
+  musicAudio.pause();
+  renderMusicScreen();
+});
+document.getElementById('music-switch-to-challenge').addEventListener('click', ()=>{
+  musicMode = 'challenge';
+  musicAudio.pause();
+  renderMusicScreen();
+});
+document.getElementById('music-switch-to-global').addEventListener('click', ()=>{
+  musicMode = 'global';
+  renderMusicScreen();
+  ensureGlobalMusicPlaying();
+});
+
+document.getElementById('music-global-upload').addEventListener('change', (e)=>{
+  const files = Array.from(e.target.files || []);
+  files.forEach(f=>{
+    globalMusicTracks.push({ name: f.name, url: URL.createObjectURL(f), volume: 1 });
+  });
+  e.target.value = '';
+  renderGlobalMusicList();
+  ensureGlobalMusicPlaying();
+});
+document.getElementById('music-global-shuffle').addEventListener('change', (e)=>{
+  globalMusicShuffle = e.target.checked;
+});
+document.getElementById('music-challenge-upload').addEventListener('change', (e)=>{
+  const files = Array.from(e.target.files || []);
+  const key = selectedMusicChallenge;
+  files.forEach(f=>{
+    challengeMusicTracks[key].push({ name: f.name, url: URL.createObjectURL(f), volume: 1 });
+  });
+  e.target.value = '';
+  renderChallengeMusicList();
+  if(activeChallengeMusicKey === key && musicMode === 'challenge' && challengeMusicIndex[key] === -1){
+    playChallengeMusic(key);
+  }
+});
+
+/* ============ SECRET: DEHYDRATED BAR ============ */
+let secretBarActive = false;
+let secretBarValue = 100;
+let secretBarInterval = null;
+
+function updateSecretBarDisplay(){
+  const fill = document.getElementById('secret-bar-fill');
+  if(fill) fill.style.width = clamp(secretBarValue, 0, 100) + '%';
+}
+
+function addToSecretBar(amount){
+  if(!secretBarActive) return;
+  secretBarValue = Math.min(100, secretBarValue + amount);
+  updateSecretBarDisplay();
+}
+
+function triggerDehydratedEnding(){
+  document.documentElement.innerHTML = '';
+  const div = document.createElement('div');
+  div.textContent = 'dehydrated';
+  document.body = document.createElement('body');
+  document.body.appendChild(div);
+  document.body.style.margin = '0';
+}
+
+function activateSecretBar(){
+  if(secretBarActive) return;
+  secretBarActive = true;
+  secretBarValue = 100;
+  document.getElementById('secret-bar-wrap').classList.remove('hidden');
+  updateSecretBarDisplay();
+  secretBarInterval = setInterval(()=>{
+    secretBarValue -= 1;
+    if(secretBarValue <= 0){
+      secretBarValue = 0;
+      updateSecretBarDisplay();
+      clearInterval(secretBarInterval);
+      secretBarInterval = null;
+      triggerDehydratedEnding();
+      return;
+    }
+    updateSecretBarDisplay();
+  }, 550);
+}
+
+document.getElementById('subtitle-none').addEventListener('click', activateSecretBar);
+
+/* ============ MODES ============ */
+function unlockedModeList(){
+  const list = ['normal'];
+  if(owned.rushed) list.push('rush');
+  if(owned.blindness) list.push('blind');
+  if(owned.forgetful) list.push('forgetful');
+  if(owned.endless) list.push('endless');
+  if(owned.troubling) list.push('troubling');
+  if(owned.noob) list.push('practice');
+  if(owned.speedster) list.push('fast');
+  if(owned.bossSlayer) list.push('bossrush');
+  return list;
+}
+const MODE_LABELS = { normal:'Normal', rush:'Rushed', blind:'Blindness', forgetful:'Forgetful', endless:'Endless', troubling:'Hell', practice:'Practice', fast:'Fast', bossrush:'Boss Rush' };
+
+function updateModeButtonVisibility(){
+  const modeBtn = document.getElementById('mode-btn');
+  if(secretEndingActive){
+    modeBtn.classList.add('hidden');
+    currentMode = 'secretbossrush';
+    applyBlindnessState();
+    return;
+  }
+  if(owned.modes){
+    modeBtn.classList.remove('hidden');
+    modeBtn.textContent = 'Mode: ' + MODE_LABELS[currentMode];
+  } else {
+    modeBtn.classList.add('hidden');
+    currentMode = 'normal';
+  }
+  applyBlindnessState();
+}
+
+function cycleMode(){
+  if(secretEndingActive) return;
+  const list = unlockedModeList();
+  const idx = list.indexOf(currentMode);
+  currentMode = list[(idx+1) % list.length];
+  updateModeButtonVisibility();
+  musicAudio.playbackRate = currentMusicPlaybackRate();
+}
+
+function applyBlindnessState(){
+  const overlay = document.getElementById('blind-overlay');
+  if(currentMode === 'blind' || currentMode === 'troubling'){
+    overlay.classList.add('active');
+  } else {
+    overlay.classList.remove('active');
+  }
+}
+
+function blindRadius(){
+  return currentMode === 'troubling' ? 200 : 140;
+}
+
+document.addEventListener('mousemove', (e)=>{
+  const overlay = document.getElementById('blind-overlay');
+  if(overlay.classList.contains('active')){
+    const r = blindRadius();
+    overlay.style.background = `radial-gradient(circle ${r}px at ${e.clientX}px ${e.clientY}px, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.97) 78%)`;
+  }
+});
+
+/* ============ SECRET ENDING: 20 BOSSES ============ */
+let lastSecretMechanic = null;
+const secretBossAudio = new Audio('Media/epiccrabsong.mp3');
+secretBossAudio.loop = true;
+
+function playSecretBossMusic(){
+  secretBossAudio.currentTime = 0;
+  secretBossAudio.play().catch(()=>{});
+}
+
+function stopSecretBossMusic(){
+  secretBossAudio.pause();
+  secretBossAudio.currentTime = 0;
+}
+
+function pickSecretBoss(){
+  let pick;
+  do {
+    pick = ALL_CHALLENGES[randInt(0, ALL_CHALLENGES.length-1)];
+  } while(pick === lastSecretMechanic && ALL_CHALLENGES.length > 1);
+  lastSecretMechanic = pick;
+  return pick;
+}
+
+function triggerSecretEnding(){
+  if(secretEndingActive) return;
+  secretEndingActive = true;
+  currentMode = 'secretbossrush';
+  updateModeButtonVisibility();
+  updateMusicButtonVisibility();
+  document.getElementById('secret-vignette').classList.add('active');
+
+  const flash = document.getElementById('secret-flash');
+  flash.classList.add('flashing');
+  document.getElementById('shop-btn').classList.add('hidden');
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      flash.classList.remove('flashing');
+    });
+  });
+
+  updatePointsDisplay();
+}
+
+function startSecretBossRun(){
+  if(currentCleanup){ currentCleanup(); currentCleanup = null; }
+  lastSecretMechanic = null;
+  secretBossIndex = 0;
+  secretRunActive = true;
+  challengeNumber = 0;
+  playSecretBossMusic();
+  startSecretBossTimer();
+  nextSecretBoss();
+}
+
+function nextSecretBoss(){
+  if(currentCleanup){ currentCleanup(); currentCleanup = null; }
+  const mechanic = pickSecretBoss();
+  challengeNumber = secretBossIndex + 1;
+  showScreen('screen-challenge');
+  document.getElementById('challenge-progress').textContent =
+    `Boss ${challengeNumber} of 20, ${CHALLENGE_NAMES[mechanic]}`;
+  renderPips(document.getElementById('menu-pips'), 0, -1);
+  const container = document.getElementById('challenge-content');
+  container.innerHTML = '';
+  BOSS_LAUNCHERS[mechanic](container);
+}
+
+function winSecretBoss(){
+  currentCleanup = null;
+  secretBossIndex++;
+  if(secretBossIndex >= 20){
+    finishSecretBossRun(true);
+  } else {
+    flashMessage(`Boss defeated! ${secretBossIndex} of 20 fallen.`);
+    nextSecretBoss();
+  }
+}
+
+function loseSecretBoss(){
+  currentCleanup = null;
+  finishSecretBossRun(false);
+}
+
+function finishSecretBossRun(won){
+  secretRunActive = false;
+  stopSecretBossTimer();
+  stopSecretBossMusic();
+  challengeNumber = 0;
+  if(won){
+    secretBossPoints++;
+    goMenu();
+    flashMessage('You defeated all 20 bosses! +1 BOSS Point.');
+    updatePointsDisplay();
+  } else {
+    goMenu();
+    flashMessage('The boss got you. Back to the menu.');
+  }
+}
+
+function startSecretBossTimer(){
+  secretBossTimerLeft = 1200;
+  const disp = document.getElementById('secret-boss-timer');
+  disp.classList.remove('hidden');
+  renderSecretBossTimer();
+  secretBossTimerInterval = setInterval(()=>{
+    secretBossTimerLeft -= 1;
+    renderSecretBossTimer();
+    if(secretBossTimerLeft <= 0){
+      stopSecretBossTimer();
+      secretRunActive = false;
+      triggerSecretTimeout();
+    }
+  }, 1000*ivMul());
+}
+
+function renderSecretBossTimer(){
+  const disp = document.getElementById('secret-boss-timer');
+  const t = Math.max(0, secretBossTimerLeft);
+  const m = Math.floor(t/60);
+  const s = String(t%60).padStart(2,'0');
+  disp.textContent = `${m}:${s}`;
+}
+
+function stopSecretBossTimer(){
+  if(secretBossTimerInterval){ clearInterval(secretBossTimerInterval); secretBossTimerInterval = null; }
+  document.getElementById('secret-boss-timer').classList.add('hidden');
+}
+
+function triggerSecretTimeout(){
+  if(currentCleanup){ currentCleanup(); currentCleanup = null; }
+  stopSecretBossMusic();
+  const overlay = document.getElementById('secret-timeout-overlay');
+  overlay.style.transition = 'none';
+  overlay.style.background = '#000';
+  overlay.classList.add('active');
+  void overlay.offsetWidth;
+  setTimeout(()=>{
+    overlay.style.transition = 'background-color 8s ease-in';
+    overlay.style.background = 'var(--secret-red)';
+  }, 30);
+}
+
+function checkFinishButton(){
+  const btn = document.getElementById('secret-finish-btn');
+  if(secretEndingActive && secretBossPoints >= 3){
+    btn.classList.remove('hidden');
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+function triggerFinalEnding(){
+  const overlay = document.getElementById('secret-ending-overlay');
+  overlay.classList.add('active');
+  setTimeout(()=>{
+    document.getElementById('secret-congrats').classList.add('show');
+    setTimeout(()=>{
+      document.getElementById('secret-ending-sub').classList.add('show');
+    }, 3000);
+  }, 5000);
+}
+
+document.getElementById('secret-finish-btn').addEventListener('click', triggerFinalEnding);
+
+/* ============ HIDDEN CHEAT CODE ============ */
+const CHEAT_CODE = "qwertyghjkl";
+let cheatProgress = 0;
+const CHEAT_CODE_2 = "zxcvbnma";
+let cheatProgress2 = 0;
+document.addEventListener('keydown', (e)=>{
+  const key = e.key.toLowerCase();
+  if(key === CHEAT_CODE[cheatProgress]){
+    cheatProgress++;
+    if(cheatProgress === CHEAT_CODE.length){
+      awardPoints(1);
+      updatePointsDisplay();
+      cheatProgress = 0;
+    }
+  } else {
+    cheatProgress = (key === CHEAT_CODE[0]) ? 1 : 0;
+  }
+
+  if(key === CHEAT_CODE_2[cheatProgress2]){
+    cheatProgress2++;
+    if(cheatProgress2 === CHEAT_CODE_2.length){
+      awardPoints(60);
+      updatePointsDisplay();
+      cheatProgress2 = 0;
+    }
+  } else {
+    cheatProgress2 = (key === CHEAT_CODE_2[0]) ? 1 : 0;
+  }
+});
+
+/* ============ NECROMANCY ============ */
+function loseOrSave(){
+  if(owned.necromancy && Math.random() < 0.3){
+    flashMessage("Necromancy saved you!");
+    winChallenge();
+  } else {
+    loseChallenge();
+  }
+}
+
+/* ============ SNIPER-EXCLUSIVE LOSE FLASH ============ */
+function sniperLose(){
+  if(owned.necromancy && Math.random() < 0.3){
+    flashMessage("Necromancy saved you!");
+    winChallenge();
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.zIndex = '10001';
+  overlay.style.background = '#fff';
+  document.body.appendChild(overlay);
+  setTimeout(()=>{
+    overlay.style.background = '#000';
+    loseChallenge();
+    setTimeout(()=>{
+      overlay.style.transition = 'opacity 0.6s ease';
+      overlay.style.opacity = '0';
+      setTimeout(()=>{ overlay.remove(); }, 650);
+    }, 800);
+  }, 50);
+}
+
+/* ============ NAVIGATION ============ */
+function goMenu(){
+  if(currentCleanup){ currentCleanup(); currentCleanup = null; }
+  stopChallengeMusic();
+  updatePointsDisplay();
+  renderPips(document.getElementById('menu-pips'), 0, -1);
+  showScreen('screen-menu');
+}
+
+document.getElementById('start-btn').addEventListener('click', ()=>{
+  if(!secretEndingActive){
+    secretShopEntryCount = 0;
+    startRun();
+  } else {
+    startSecretBossRun();
+  }
+});
+document.getElementById('shop-btn').addEventListener('click', ()=>{
+  if(!secretEndingActive){
+    secretShopEntryCount++;
+    if(secretShopEntryCount >= 7){
+      triggerSecretEnding();
+      return;
+    }
+  }
+  renderShop(); showScreen('screen-shop');
+});
+document.getElementById('shop-back-btn').addEventListener('click', ()=>showScreen('screen-menu'));
+document.getElementById('mode-btn').addEventListener('click', cycleMode);
+const WINNER_STORAGE_KEY = 'the5ChallengeRumble_winner';
+
+function triggerWinnerScreen(){
+  document.documentElement.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'you-win-screen';
+  div.textContent = 'You beat the game!';
+  document.body = document.createElement('body');
+  document.body.appendChild(div);
+  document.body.style.margin = '0';
+}
+
+document.getElementById('buy-winner-btn').addEventListener('click', ()=>{
+  if(points >= 40){
+    try{ localStorage.setItem(WINNER_STORAGE_KEY, 'true'); }catch(e){}
+    triggerWinnerScreen();
+  } else {
+    flashMessage("Not enough Exp(ie) Points!");
+  }
+});
+document.getElementById('buy-canceled-btn').addEventListener('click', ()=>{
+  if(points >= 5){
+    points -= 5;
+    updatePointsDisplay();
+    setInterval(()=>{
+      const all = document.querySelectorAll('body *');
+      if(all.length === 0) return;
+      const pick = all[Math.floor(Math.random()*all.length)];
+      pick.remove();
+    }, 2000);
+  } else {
+    flashMessage("Not enough Exp(ie) Points!");
+  }
+});
+
+/* ============ RUSH TIMER ============ */
+function updateRushDisplay(){
+  const disp = document.getElementById('rush-timer-display');
+  const m = Math.floor(rushTimeLeft/60);
+  const s = String(rushTimeLeft%60).padStart(2,'0');
+  disp.textContent = `Rush: ${m}:${s}`;
+}
+function startRushTimer(){
+  rushTimeLeft = currentMode === 'troubling' ? 240 : 150;
+  const disp = document.getElementById('rush-timer-display');
+  disp.classList.remove('hidden');
+  updateRushDisplay();
+  rushInterval = setInterval(()=>{
+    rushTimeLeft--;
+    updateRushDisplay();
+    if(rushTimeLeft <= 0){
+      stopRushTimer();
+      if(currentCleanup){ currentCleanup(); currentCleanup = null; }
+      points = 0;
+      remainingChallenges = [];
+      challengeNumber = 0;
+      stopScreenShake();
+      goMenu();
+      flashMessage(currentMode === 'troubling' ? "Time's up! Troubling mode failed." : "Time's up! Rush mode failed.");
+    }
+  },1000);
+}
+function stopRushTimer(){
+  clearInterval(rushInterval);
+  rushInterval = null;
+  document.getElementById('rush-timer-display').classList.add('hidden');
+}
+
+/* ============ SCREEN SHAKE (TROUBLING MODE) ============ */
+let shakeRafId = null;
+let shakeInterval = null;
+let punchOffset = { x: 0, y: 0 };
+let punchTarget = { x: 0, y: 0 };
+let punchStart = 0;
+let punching = false;
+const PUNCH_DURATION = 3000;
+const MAX_PUNCH = 60;
+
+function startScreenShake(){
+  const wrap = document.getElementById('shake-wrap');
+  punchOffset = { x:0, y:0 };
+  punchTarget = { x:0, y:0 };
+  punching = false;
+
+  shakeInterval = setInterval(()=>{
+    if(Math.random() < 0.5){
+      const angle = Math.random() * Math.PI * 2;
+      punchTarget = {
+        x: Math.cos(angle) * MAX_PUNCH,
+        y: Math.sin(angle) * MAX_PUNCH
+      };
+      punchStart = performance.now();
+      punching = true;
+    }
+  }, 10000);
+
+  function frame(){
+    const wrap = document.getElementById('shake-wrap');
+    const jitterX = (Math.random()-0.5) * 6;
+    const jitterY = (Math.random()-0.5) * 6;
+
+    let px = 0, py = 0;
+    if(punching){
+      const elapsed = performance.now() - punchStart;
+      const t = Math.min(elapsed / PUNCH_DURATION, 1);
+      const ease = 1 - t; // slides back to normal over 3 seconds
+      px = punchTarget.x * ease;
+      py = punchTarget.y * ease;
+      if(t >= 1) punching = false;
+    }
+
+    let totalX = clamp(px + jitterX, -MAX_PUNCH-6, MAX_PUNCH+6);
+    let totalY = clamp(py + jitterY, -MAX_PUNCH-6, MAX_PUNCH+6);
+
+    if(wrap) wrap.style.transform = `translate(${totalX}px, ${totalY}px)`;
+    shakeRafId = requestAnimationFrame(frame);
+  }
+  shakeRafId = requestAnimationFrame(frame);
+}
+
+function stopScreenShake(){
+  clearInterval(shakeInterval);
+  shakeInterval = null;
+  cancelAnimationFrame(shakeRafId);
+  shakeRafId = null;
+  const wrap = document.getElementById('shake-wrap');
+  if(wrap) wrap.style.transform = '';
+}
+
+/* ============ RUN LOOP ============ */
+let lastTroublingChallenge = null;
+
+function startRun(){
+  remainingChallenges = shuffle(ALL_CHALLENGES.slice());
+  challengeNumber = 0;
+  lastTroublingChallenge = null;
+  goldenFiveArmedThisRound = (the5PopupShown && the5PopupStage === 'find');
+  if(currentMode === 'rush' || currentMode === 'troubling') startRushTimer();
+  if(currentMode === 'troubling') startScreenShake();
+  nextChallenge();
+}
+
+function pickTroublingChallenge(){
+  let pick;
+  do {
+    pick = ALL_CHALLENGES[randInt(0, ALL_CHALLENGES.length-1)];
+  } while(pick === lastTroublingChallenge && ALL_CHALLENGES.length > 1);
+  lastTroublingChallenge = pick;
+  return pick;
+}
+
+function nextChallenge(){
+  if(currentCleanup){ currentCleanup(); currentCleanup = null; }
+
+  if(currentMode === 'troubling'){
+    if(challengeNumber >= 15){
+      awardPoints(8);
+      stopRushTimer();
+      stopScreenShake();
+      goMenu();
+      flashMessage("You beat challenge 15 in Troubling mode! +8 Exp(ie) Points.");
+      if(mysteryActive) mysterySucceed();
+      return;
+    }
+    const challenge = pickTroublingChallenge();
+    challengeNumber++;
+    showScreen('screen-challenge');
+    document.getElementById('challenge-progress').textContent =
+      `Challenge ${challengeNumber} of 15, ${CHALLENGE_NAMES[challenge]}`;
+    renderPips(document.getElementById('menu-pips'), 0, -1);
+    const container = document.getElementById('challenge-content');
+    container.innerHTML = '';
+    LAUNCHERS[challenge](container);
+    if(owned.musical) playChallengeMusic(challenge);
+    return;
+  }
+
+  if(remainingChallenges.length === 0){
+    if(currentMode === 'endless'){
+      remainingChallenges = shuffle(ALL_CHALLENGES.slice());
+    } else if(currentMode === 'bossrush'){
+      stopRushTimer();
+      goMenu();
+      flashMessage("You defeated all 5 bosses in Boss Rush!");
+      if(mysteryActive) mysterySucceed();
+      return;
+    } else {
+      let awarded = (currentMode === 'rush' || currentMode === 'blind' || currentMode === 'forgetful') ? 2 : 1;
+      let msg;
+      if(currentMode === 'practice'){
+        msg = "You cleared all 5 challenges! (Practice mode: no points earned.)";
+      } else {
+        points += awarded;
+        msg = `You cleared all 5 challenges! +${awarded} Exp(ie) Point${awarded===1?'':'s'}.`;
+        if(owned.bonusPoints && Math.random() < 0.3){
+          points += 1;
+          msg += " Bonus point!";
+        }
+      }
+      if(mode555){
+        mode555Streak++;
+        if(mode555Streak >= 5 && !the5PopupShown){
+          the5PopupShown = true;
+          the5PopupStage = 'find';
+          updateThe5Popup();
+        }
+      }
+      stopRushTimer();
+      goMenu();
+      flashMessage(msg);
+      if(mysteryActive) mysterySucceed();
+      return;
+    }
+  }
+  const challenge = remainingChallenges.pop();
+  challengeNumber++;
+  showScreen('screen-challenge');
+  document.getElementById('challenge-progress').textContent =
+    currentMode === 'endless'
+      ? `Challenge ${challengeNumber}, ${CHALLENGE_NAMES[challenge]} (Endless)`
+      : currentMode === 'bossrush'
+      ? `Boss ${challengeNumber} of 5, ${CHALLENGE_NAMES[challenge]}`
+      : `Challenge ${challengeNumber} of 5, ${CHALLENGE_NAMES[challenge]}`;
+  if(currentMode === 'endless'){
+    renderPips(document.getElementById('menu-pips'), 0, -1);
+  } else {
+    renderPips(document.getElementById('menu-pips'), challengeNumber-1, challengeNumber-1);
+  }
+  const container = document.getElementById('challenge-content');
+  container.innerHTML = '';
+  const launcherSet = (currentMode === 'bossrush') ? BOSS_LAUNCHERS : LAUNCHERS;
+  launcherSet[challenge](container);
+  if(owned.musical) playChallengeMusic(challenge);
+  if(goldenFiveArmedThisRound && challengeNumber === 5){
+    spawnGoldenFive();
+  }
+}
+
+function winChallenge(){
+  currentCleanup = null;
+  if(secretRunActive){ winSecretBoss(); return; }
+  if(secretBarActive){
+    addToSecretBar(20);
+    if(challengeNumber > 0 && challengeNumber % 5 === 0){
+      addToSecretBar(100);
+    }
+  }
+  if(currentMode === 'endless' && challengeNumber > 0 && challengeNumber % 5 === 0){
+    if(owned.bonusPoints && Math.random() < 0.3){
+      awardPoints(1);
+      flashMessage("Bonus point!");
+    }
+  }
+  if(currentMode === 'fast' && Math.random() < 0.5){
+    awardPoints(1);
+    flashMessage("Fast bonus point!");
+  }
+  nextChallenge();
+}
+
+/* Used by Boss Rush: defeating a boss grants its own point reward instead of the normal win flow. */
+function winBossChallenge(rewardPoints){
+  currentCleanup = null;
+  if(secretRunActive){ winSecretBoss(); return; }
+  if(secretBarActive){
+    addToSecretBar(20);
+    if(challengeNumber > 0 && challengeNumber % 5 === 0){
+      addToSecretBar(100);
+    }
+  }
+  awardPoints(rewardPoints);
+  flashMessage(`Boss defeated! +${rewardPoints} Exp(ie) Point${rewardPoints===1?'':'s'}.`);
+  nextChallenge();
+}
+
+function loseChallenge(){
+  currentCleanup = null;
+  if(secretRunActive){ loseSecretBoss(); return; }
+  stopRushTimer();
+  stopScreenShake();
+  mode555Streak = 0;
+  let msg = "Haha loser";
+  if(currentMode === 'troubling'){
+    points = 0;
+    remainingChallenges = [];
+    challengeNumber = 0;
+    goMenu();
+    flashMessage(msg);
+    return;
+  }
+  if(currentMode === 'endless' && challengeNumber >= 5){
+    const award = Math.floor(challengeNumber/5) + Math.floor(challengeNumber/10);
+    awardPoints(award);
+    msg = `You made it to challenge ${challengeNumber} in Endless mode! +${award} Exp(ie) Point${award===1?'':'s'}.`;
+  } else if(currentMode === 'practice'){
+    msg = "Haha loser (Practice mode: your points are safe.)";
+  } else if(currentMode === 'bossrush'){
+    points = 0;
+    msg = "The boss got you! Back to zero.";
+  } else {
+    points = 0;
+  }
+  remainingChallenges = [];
+  challengeNumber = 0;
+  goMenu();
+  flashMessage(msg);
+}
+
+/* ============ CHALLENGE: SNIPER ============ */
+function launchSniper(container){
+  const startTime = 30 + (owned.extraTime ? 2 : 0);
+  let shields = owned.shield ? 1 : 0;
+  container.innerHTML = `
+    <h2>Sniper</h2>
+    <p>Don't let a red dot touch your cursor. Survive ${startTime} seconds.</p>
+    <div id="sniper-timer">Time: ${startTime}</div>
+    ${owned.shield ? `<div id="sniper-shield">Shields: ${shields}</div>` : ''}
+    <div id="sniper-area"></div>
+  `;
+  const area = document.getElementById('sniper-area');
+  let mouseX = area.clientWidth / 2, mouseY = area.clientHeight / 2;
+  let hasMouseMoved = false;
+  const dots = [];
+  const speed = 65;
+  let timeLeft = startTime;
+  let lastFrameTime = performance.now();
+  let rafId, timerInterval, spawnInterval, dashCheckInterval;
+  let done = false;
+
+  function updateShieldDisplay(){
+    const s = document.getElementById('sniper-shield');
+    if(s) s.textContent = 'Shields: ' + shields;
+  }
+
+  function onMouseMove(e){
+    const rect = area.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+    hasMouseMoved = true;
+  }
+  area.addEventListener('mousemove', onMouseMove);
+
+  function spawnDot(){
+    const rect = area.getBoundingClientRect();
+    const margin = 30;
+    const corners = [
+      { x: margin, y: margin },
+      { x: rect.width - margin, y: margin },
+      { x: margin, y: rect.height - margin },
+      { x: rect.width - margin, y: rect.height - margin }
+    ];
+    const corner = corners[randInt(0,3)];
+    const el = document.createElement('div');
+    el.className = 'sniper-dot';
+    area.appendChild(el);
+    const dot = { el, x: corner.x, y: corner.y, dashing:false, dashDx:0, dashDy:0, dashTimeLeft:0 };
+    el.style.left = dot.x+'px';
+    el.style.top = dot.y+'px';
+    if(currentMode === 'forgetful'){
+      el.style.transition = 'opacity 10s linear';
+      requestAnimationFrame(()=>{ el.style.opacity = '0.07'; });
+    }
+    dots.push(dot);
+  }
+  function spawnWave(){
+    spawnDot();
+    if(Math.random() < 0.5) spawnDot();
+  }
+  spawnWave();
+
+  timerInterval = setInterval(()=>{
+    timeLeft--;
+    const t = document.getElementById('sniper-timer');
+    if(t) t.textContent = 'Time: '+timeLeft;
+    if(timeLeft <= 0 && !done){
+      done = true;
+      cleanup();
+      winChallenge();
+    }
+  },1000*ivMul());
+
+  spawnInterval = setInterval(()=>{ if(!done) spawnWave(); }, 3000*ivMul());
+
+  const DASH_SPEED = 400;
+  const DASH_DURATION = 0.5;
+  dashCheckInterval = setInterval(()=>{
+    if(done) return;
+    for(const dot of dots){
+      if(!dot.dashing && Math.random() < 0.1){
+        const dx = mouseX-dot.x, dy = mouseY-dot.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist > 1){
+          dot.dashing = true;
+          dot.dashDx = dx/dist;
+          dot.dashDy = dy/dist;
+          dot.dashTimeLeft = DASH_DURATION;
+          dot.el.classList.add('dashing');
+        }
+      }
+    }
+  }, 1000*ivMul());
+
+  const DOT_RADIUS = 10;
+  const MIN_SEPARATION = DOT_RADIUS * 2;
+
+  function frame(now){
+    if(done) return;
+    const dt = Math.min((now-lastFrameTime)/1000, 0.05) * dtMul();
+    lastFrameTime = now;
+
+    // Move each dot toward the cursor, unless it's mid-dash (straight line, no turning)
+    for(const dot of dots){
+      if(dot.dashing){
+        dot.x += dot.dashDx*DASH_SPEED*dt;
+        dot.y += dot.dashDy*DASH_SPEED*dt;
+        dot.dashTimeLeft -= dt;
+        if(dot.dashTimeLeft <= 0){
+          dot.dashing = false;
+          dot.el.classList.remove('dashing');
+        }
+      } else {
+        const dx = mouseX-dot.x, dy = mouseY-dot.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist > 1){
+          dot.x += (dx/dist)*speed*dt;
+          dot.y += (dy/dist)*speed*dt;
+        }
+      }
+    }
+
+    // Push overlapping dots apart so they pile into a mass instead of merging
+    for(let i=0;i<dots.length;i++){
+      for(let j=i+1;j<dots.length;j++){
+        const a = dots[i], b = dots[j];
+        const dx = b.x-a.x, dy = b.y-a.y;
+        let dist = Math.hypot(dx,dy);
+        if(dist < MIN_SEPARATION){
+          if(dist < 0.01){ dist = 0.01; }
+          const overlap = (MIN_SEPARATION - dist) / 2;
+          const nx = dx/dist, ny = dy/dist;
+          a.x -= nx*overlap;
+          a.y -= ny*overlap;
+          b.x += nx*overlap;
+          b.y += ny*overlap;
+        }
+      }
+    }
+
+    for(const dot of dots){
+      dot.el.style.left = dot.x+'px';
+      dot.el.style.top = dot.y+'px';
+      if(hasMouseMoved && !dot.dashing){
+        const dist = Math.hypot(mouseX-dot.x, mouseY-dot.y);
+        if(dist < 20){
+          if(shields > 0){
+            shields--;
+            updateShieldDisplay();
+            dot.el.remove();
+            const idx = dots.indexOf(dot);
+            if(idx !== -1) dots.splice(idx, 1);
+            break;
+          } else {
+            done = true;
+            cleanup();
+            sniperLose();
+            return;
+          }
+        }
+      }
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+  rafId = requestAnimationFrame(frame);
+
+  function cleanup(){
+    clearInterval(timerInterval);
+    clearInterval(spawnInterval);
+    clearInterval(dashCheckInterval);
+    cancelAnimationFrame(rafId);
+    area.removeEventListener('mousemove', onMouseMove);
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ CHALLENGE: TYPING ============ */
+const TYPING_SENTENCES = [
+  "Roblox is very boring.",
+  "I love this game!",
+  "When are you getting on?",
+  "How much wood would a wood chuck chuck if a wood chuck could chuck wood?",
+  "Mau Makan Apa?",
+  "I might have dementia",
+  "How is the weather?",
+  "Boo, did I scare you?",
+  "I swear im going insane!",
+  "They locked me in a room...",
+  "Water Bottle",
+  "MY KEYBOARD NOOOO!",
+  "WAS THAT THE BITE OF EIGHTY SEVEN?",
+  "My neck hurts.",
+  "Buffalo Buffalo Buffalo.",
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  "SIX SEVEN",
+  "I might have dementia",
+  "Spider Dave! you better behave!",
+  "Hehehehaw",
+  "Twenty Four Karat Gold.",
+  "Meow, Meow Mrrp Mew",
+  "Welp, they lost me.",
+  "Also try Minecraft!",
+  "Also try Terraria!",
+  "Portal go here, portal go there.",
+  "I am your father.",
+  "Someone loves cats.",
+  "Im building with LEGOs rn.",
+  "Why so serious?",
+  "You had me at hello.",
+  "Hasta la vista baby",
+  "Three thousand plus lines!",
+  "My challenge has been rumbled.",
+  "Five Hundred Cigarettes"
+];
+
+function launchTyping(container){
+  const sentence = TYPING_SENTENCES[randInt(0, TYPING_SENTENCES.length-1)];
+  let idx = 0;
+  let done = false;
+
+  container.innerHTML = `
+    <h2>Typing</h2>
+    <p>Type the sentence using the on-screen keyboard only. It shuffles after every key!</p>
+    <div id="typing-sentence"></div>
+    <div id="typing-keyboard"></div>
+    <div id="typing-legend">
+      <span><i class="legend-swatch" style="background:var(--gold)"></i> lowercase L</span>
+      <span><i class="legend-swatch" style="background:#4ade80"></i> uppercase i</span>
+      <span><i class="legend-swatch" style="background:var(--danger)"></i> symbols</span>
+    </div>
+  `;
+
+  const sentenceEl = document.getElementById('typing-sentence');
+  const keyboardEl = document.getElementById('typing-keyboard');
+
+  if(currentMode === 'forgetful'){
+    sentenceEl.style.transition = 'opacity 120s linear';
+    requestAnimationFrame(()=>{ sentenceEl.style.opacity = '0.1'; });
+  }
+
+  const chars = [];
+  const lowers = 'abcdefghijklmnopqrstuvwxyz'.split('');
+  lowers.forEach(c=> chars.push(c));
+  lowers.forEach(c=> chars.push(c.toUpperCase()));
+  chars.push('.', ',', '?', '!');
+
+  const keyButtons = [];
+  chars.forEach(c=>{
+    const b = document.createElement('button');
+    b.className = 'key-btn';
+    b.textContent = c;
+    b.dataset.char = c;
+    if(c === 'l'){
+      b.style.color = 'var(--gold)';
+    } else if(c === 'I'){
+      b.style.color = '#4ade80';
+    } else if(c === '.' || c === ',' || c === '?' || c === '!'){
+      b.style.color = 'var(--danger)';
+    }
+    b.addEventListener('click', ()=>onKeyPress(c));
+    keyboardEl.appendChild(b);
+    keyButtons.push(b);
+  });
+  const spaceBtn = document.createElement('button');
+  spaceBtn.className = 'key-btn wide';
+  spaceBtn.textContent = 'Space';
+  spaceBtn.dataset.char = ' ';
+  spaceBtn.addEventListener('click', ()=>onKeyPress(' '));
+  keyboardEl.appendChild(spaceBtn);
+  keyButtons.push(spaceBtn);
+
+  function shuffleKeyboard(){
+    keyButtons.forEach(b=>{ b.style.order = randInt(0,1000); });
+  }
+  shuffleKeyboard();
+
+  function updateSpotted(){
+    if(!owned.spotted) return;
+    const expected = sentence[idx];
+    keyButtons.forEach(b=>{
+      b.classList.toggle('spotted', b.dataset.char === expected);
+    });
+  }
+
+  function renderSentence(){
+    let html = '';
+    for(let i=0;i<sentence.length;i++){
+      const ch = sentence[i] === ' ' ? '&nbsp;' : sentence[i];
+      if(i < idx) html += `<span class="done">${ch}</span>`;
+      else if(i === idx) html += `<span class="current">${ch}</span>`;
+      else html += `<span class="todo">${ch}</span>`;
+    }
+    sentenceEl.innerHTML = html;
+  }
+  renderSentence();
+  updateSpotted();
+
+  function onKeyPress(c){
+    if(done) return;
+    const expected = sentence[idx];
+    if(c === expected){
+      idx++;
+      renderSentence();
+      if(idx >= sentence.length){
+        done = true;
+        cleanup();
+        winChallenge();
+        return;
+      }
+      shuffleKeyboard();
+      updateSpotted();
+    } else {
+      done = true;
+      cleanup();
+      loseOrSave();
+    }
+  }
+
+  function cleanup(){}
+  currentCleanup = cleanup;
+}
+
+/* ============ CHALLENGE: CLICKER ============ */
+function launchClicker(container){
+  const required = 20 - (owned.singularLess ? 1 : 0);
+  const startTime = 20 + (owned.extraTime ? 2 : 0);
+  container.innerHTML = `
+    <h2>Clicker</h2>
+    <p>Click the button ${required} times in ${startTime} seconds. It has physics, clicks and window movement shove it around!${owned.clicked ? ' Every click has a 20% chance to spawn another button.' : ''}</p>
+    <div id="clicker-status">Clicks: 0 / ${required} | Time: ${startTime}</div>
+    <div id="clicker-area"></div>
+  `;
+  const area = document.getElementById('clicker-area');
+  let clicks = 0, timeLeft = startTime, done = false;
+  const BTN_W = 90, BTN_H = 46;
+  const buttons = [];
+  let lastScreenX = window.screenX, lastScreenY = window.screenY;
+  let rafId, timerInt, lastTime = performance.now();
+
+  function makeButton(x, y){
+    const el = document.createElement('button');
+    el.className = '';
+    el.id = 'clicker-btn';
+    el.textContent = 'Click!';
+    area.appendChild(el);
+    const b = { el, pos: { x, y }, vel: { x:0, y:0 } };
+    el.style.left = x+'px';
+    el.style.top = y+'px';
+    el.addEventListener('click', (e)=>onClick(e, b));
+    buttons.push(b);
+    return b;
+  }
+  makeButton(area.clientWidth/2 - BTN_W/2, area.clientHeight/2 - BTN_H/2);
+
+  if(currentMode === 'forgetful'){
+    area.style.transition = `opacity ${startTime}s linear`;
+    requestAnimationFrame(()=>{ area.style.opacity = '0'; });
+  }
+
+  function updateStatus(){
+    const s = document.getElementById('clicker-status');
+    if(s) s.textContent = `Clicks: ${clicks} / ${required} | Time: ${timeLeft}`;
+  }
+
+  timerInt = setInterval(()=>{
+    if(done) return;
+    timeLeft--;
+    updateStatus();
+    if(timeLeft <= 0){
+      done = true;
+      cleanup();
+      loseOrSave();
+    }
+  },1000*ivMul());
+
+  function findSpawnSpot(){
+    const maxX = area.clientWidth - BTN_W;
+    const maxY = area.clientHeight - BTN_H;
+    for(let attempt=0; attempt<30; attempt++){
+      const x = Math.random()*maxX, y = Math.random()*maxY;
+      const cx = x + BTN_W/2, cy = y + BTN_H/2;
+      let ok = true;
+      for(const b of buttons){
+        const bcx = b.pos.x + BTN_W/2, bcy = b.pos.y + BTN_H/2;
+        if(Math.hypot(cx-bcx, cy-bcy) < Math.max(BTN_W, BTN_H)){ ok = false; break; }
+      }
+      if(ok) return { x, y };
+    }
+    return null;
+  }
+
+  function onClick(e, b){
+    if(done) return;
+    e.stopPropagation();
+    clicks++;
+    updateStatus();
+    // sends the button further with every click made this challenge
+    const angle = Math.random()*Math.PI*2;
+    const power = 320 + Math.random()*220 + clicks*35;
+    b.vel.x += Math.cos(angle)*power;
+    b.vel.y += Math.sin(angle)*power;
+
+    if(owned.clicked && Math.random() < 0.2){
+      const spot = findSpawnSpot();
+      if(spot) makeButton(spot.x, spot.y);
+    }
+
+    if(clicks >= required){
+      done = true;
+      cleanup();
+      winChallenge();
+    }
+  }
+
+  const MIN_SEPARATION = Math.max(BTN_W, BTN_H);
+
+  function frame(now){
+    if(done) return;
+    const dt = Math.min((now-lastTime)/1000, 0.05) * dtMul();
+    lastTime = now;
+    const dx = window.screenX - lastScreenX;
+    const dy = window.screenY - lastScreenY;
+    lastScreenX = window.screenX; lastScreenY = window.screenY;
+
+    const maxX = area.clientWidth - BTN_W;
+    const maxY = area.clientHeight - BTN_H;
+
+    for(const b of buttons){
+      b.vel.x += dx*8;
+      b.vel.y += dy*8;
+      b.pos.x += b.vel.x*dt;
+      b.pos.y += b.vel.y*dt;
+      b.vel.x *= 0.95;
+      b.vel.y *= 0.95;
+      if(b.pos.x < 0){ b.pos.x = 0; b.vel.x *= -0.6; }
+      if(b.pos.x > maxX){ b.pos.x = maxX; b.vel.x *= -0.6; }
+      if(b.pos.y < 0){ b.pos.y = 0; b.vel.y *= -0.6; }
+      if(b.pos.y > maxY){ b.pos.y = maxY; b.vel.y *= -0.6; }
+    }
+
+    // keep buttons from overlapping each other, like the sniper dots
+    for(let i=0;i<buttons.length;i++){
+      for(let j=i+1;j<buttons.length;j++){
+        const a = buttons[i], c = buttons[j];
+        const acx = a.pos.x+BTN_W/2, acy = a.pos.y+BTN_H/2;
+        const ccx = c.pos.x+BTN_W/2, ccy = c.pos.y+BTN_H/2;
+        const ddx = ccx-acx, ddy = ccy-acy;
+        let dist = Math.hypot(ddx,ddy);
+        if(dist < MIN_SEPARATION){
+          if(dist < 0.01) dist = 0.01;
+          const overlap = (MIN_SEPARATION - dist) / 2;
+          const nx = ddx/dist, ny = ddy/dist;
+          a.pos.x -= nx*overlap; a.pos.y -= ny*overlap;
+          c.pos.x += nx*overlap; c.pos.y += ny*overlap;
+        }
+      }
+    }
+
+    for(const b of buttons){
+      b.el.style.left = b.pos.x+'px';
+      b.el.style.top = b.pos.y+'px';
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+  rafId = requestAnimationFrame(frame);
+
+  function cleanup(){
+    clearInterval(timerInt);
+    cancelAnimationFrame(rafId);
+    buttons.forEach(b=> b.el.remove());
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ CHALLENGE: COLOR PICKER ============ */
+function launchColorPicker(container){
+  const targetH = randInt(0,359), targetS = randInt(45,90), targetL = randInt(30,68);
+  const targetColor = `hsl(${targetH},${targetS}%,${targetL}%)`;
+
+  let colors = [targetColor];
+  const numDecoys = randInt(1,3);
+  for(let i=0;i<numDecoys;i++){
+    let dh, ds, dl, candidate;
+    do {
+      dh = ((targetH + (randInt(0,1)?1:-1)*randInt(6,16)) + 360) % 360;
+      ds = clamp(targetS + randInt(-10,10), 20, 95);
+      dl = clamp(targetL + randInt(-10,10), 15, 85);
+      candidate = `hsl(${dh},${ds}%,${dl}%)`;
+    } while(colors.includes(candidate));
+    colors.push(candidate);
+  }
+  let secondTarget = null;
+  if(owned.eyeSpy){
+    let sh, ss, sl, candidate;
+    do {
+      sh = randInt(0,359); ss = randInt(35,95); sl = randInt(25,75);
+      candidate = `hsl(${sh},${ss}%,${sl}%)`;
+    } while(colors.includes(candidate));
+    secondTarget = candidate;
+    colors.push(secondTarget);
+  }
+
+  while(colors.length < 32){
+    const h = randInt(0,359), s = randInt(35,95), l = randInt(25,75);
+    const c = `hsl(${h},${s}%,${l}%)`;
+    if(!colors.includes(c)) colors.push(c);
+  }
+  colors = shuffle(colors);
+
+  const winningColors = secondTarget ? [targetColor, secondTarget] : [targetColor];
+
+  container.innerHTML = `
+    <h2>Color Picker</h2>
+    <p>${secondTarget ? 'Click a swatch that matches either color shown above.' : 'Click the swatch that matches this color exactly.'}</p>
+    <div id="target-swatch" style="background:${secondTarget ? `linear-gradient(90deg, ${targetColor} 50%, ${secondTarget} 50%)` : targetColor}"></div>
+    <div id="color-grid"></div>
+  `;
+  const grid = document.getElementById('color-grid');
+  let done = false;
+  colors.forEach(c=>{
+    const sw = document.createElement('div');
+    sw.className = 'color-swatch';
+    sw.style.background = c;
+    sw.addEventListener('click', ()=>{
+      if(done) return;
+      done = true;
+      if(winningColors.includes(c)) winChallenge();
+      else loseOrSave();
+    });
+    grid.appendChild(sw);
+  });
+
+  let forgetfulTimeout = null;
+  if(currentMode === 'forgetful'){
+    const swatch = document.getElementById('target-swatch');
+    if(swatch){
+      swatch.style.transition = 'opacity 10s linear';
+      requestAnimationFrame(()=>{ swatch.style.opacity = '0'; });
+    }
+  }
+
+  currentCleanup = function(){ if(forgetfulTimeout) clearTimeout(forgetfulTimeout); };
+}
+
+/* ============ CHALLENGE: WHAT TIME? ============ */
+function launchWhatTime(container){
+  // A completely random simulated clock, not tied to the real device time.
+  let simDate = new Date(
+    randInt(1, 9999),
+    randInt(0, 11),
+    randInt(1, 28),
+    randInt(0, 23),
+    randInt(0, 59),
+    randInt(0, 59)
+  );
+  const startTime = 30 + (owned.extraTime ? 2 : 0);
+
+  container.innerHTML = `
+    <h2>What Time?</h2>
+    <div id="wt-clock"></div>
+    <p>Enter the exact time shown above (Year, Month, Day, Hour, Minute, Second) and hit Submit before time runs out. It keeps ticking!</p>
+    <div id="whattime-timer">Time left: ${startTime}</div>
+    <div class="time-inputs">
+      <label>Year <input type="number" id="wt-year"></label>
+      <label>Month <input type="number" id="wt-month" min="1" max="12"></label>
+      <label>Day <input type="number" id="wt-day" min="1" max="31"></label>
+      <label>Hour <input type="number" id="wt-hour" min="0" max="23"></label>
+      <label>Minute <input type="number" id="wt-minute" min="0" max="59"></label>
+      <label>Second <input type="number" id="wt-second" min="0" max="59"></label>
+    </div>
+    <div class="center-btn"><button class="btn-primary" id="wt-submit">Submit</button></div>
+    <div id="wt-feedback"></div>
+  `;
+
+  if(owned.prepTime){
+    const fillable = [
+      { id:'wt-year', val: simDate.getFullYear() },
+      { id:'wt-month', val: simDate.getMonth()+1 },
+      { id:'wt-day', val: simDate.getDate() },
+      { id:'wt-hour', val: simDate.getHours() },
+      { id:'wt-minute', val: simDate.getMinutes() }
+    ];
+    const picks = shuffle(fillable).slice(0, 2);
+    picks.forEach(p=>{
+      const el = document.getElementById(p.id);
+      if(el) el.value = p.val;
+    });
+  }
+
+  const clockEl = document.getElementById('wt-clock');
+  clockEl.style.textAlign = 'center';
+  clockEl.style.fontFamily = "'Bangers', cursive";
+  clockEl.style.fontSize = '28px';
+  clockEl.style.color = 'var(--gold)';
+  clockEl.style.margin = '4px 0 12px 0';
+  if(currentMode === 'forgetful'){
+    clockEl.style.transition = 'opacity 15s linear';
+    requestAnimationFrame(()=>{ clockEl.style.opacity = '0'; });
+  }
+  clockEl.style.letterSpacing = '1px';
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function renderClock(){
+    clockEl.textContent =
+      `${simDate.getFullYear()}-${pad(simDate.getMonth()+1)}-${pad(simDate.getDate())} `+
+      `${pad(simDate.getHours())}:${pad(simDate.getMinutes())}:${pad(simDate.getSeconds())}`;
+  }
+  renderClock();
+
+  let timeLeft = startTime, done = false;
+
+  const clockInt = setInterval(()=>{
+    if(done) return;
+    simDate = new Date(simDate.getTime() + 1000);
+    renderClock();
+  }, 1000);
+
+  const timerInt = setInterval(()=>{
+    if(done) return;
+    timeLeft--;
+    const t = document.getElementById('whattime-timer');
+    if(t) t.textContent = 'Time left: '+timeLeft;
+    if(timeLeft <= 0){
+      done = true;
+      cleanup();
+      loseOrSave();
+    }
+  },1000*ivMul());
+
+  const changeInt = setInterval(()=>{
+    if(done) return;
+    if(Math.random() < 0.5){
+      simDate = new Date(
+        randInt(1, 9999),
+        randInt(0, 11),
+        randInt(1, 28),
+        randInt(0, 23),
+        randInt(0, 59),
+        randInt(0, 59)
+      );
+      renderClock();
+    }
+  }, 20000*ivMul());
+
+  function onSubmit(){
+    if(done) return;
+    const y = +document.getElementById('wt-year').value;
+    const mo = +document.getElementById('wt-month').value;
+    const d = +document.getElementById('wt-day').value;
+    const h = +document.getElementById('wt-hour').value;
+    const mi = +document.getElementById('wt-minute').value;
+    const s = +document.getElementById('wt-second').value;
+    if(
+      y === simDate.getFullYear() &&
+      mo === simDate.getMonth()+1 &&
+      d === simDate.getDate() &&
+      h === simDate.getHours() &&
+      mi === simDate.getMinutes() &&
+      s === simDate.getSeconds()
+    ){
+      done = true;
+      cleanup();
+      winChallenge();
+    } else {
+      const fb = document.getElementById('wt-feedback');
+      if(fb) fb.textContent = 'Wrong';
+    }
+  }
+  document.getElementById('wt-submit').addEventListener('click', onSubmit);
+
+  function cleanup(){
+    clearInterval(clockInt);
+    clearInterval(timerInt);
+    clearInterval(changeInt);
+    const btn = document.getElementById('wt-submit');
+    if(btn) btn.removeEventListener('click', onSubmit);
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ BOSS RUSH: SNIPER ============ */
+function launchBossSniper(container){
+  let bossHealth = 3;
+  let shields = owned.shield ? 1 : 0;
+  let done = false;
+  container.innerHTML = `
+    <h2>Sniper Boss</h2>
+    <p>No timer this time. Steer dashing dots into the yellow circle to damage the boss. Don't let a dot touch your cursor! The circle shields itself for 10 seconds after taking a hit.</p>
+    <div class="boss-health-wrap">
+      <span class="boss-health-label">Boss Health</span>
+      <div class="boss-health-pips" id="boss-sniper-health"></div>
+    </div>
+    ${owned.shield ? `<div id="sniper-shield">Shields: ${shields}</div>` : ''}
+    <div id="sniper-area"></div>
+  `;
+  const area = document.getElementById('sniper-area');
+
+  function renderHealth(){
+    const wrap = document.getElementById('boss-sniper-health');
+    if(!wrap) return;
+    wrap.innerHTML = '';
+    for(let i=0;i<3;i++){
+      const p = document.createElement('div');
+      p.className = 'boss-health-pip' + (i < bossHealth ? '' : ' empty');
+      wrap.appendChild(p);
+    }
+  }
+  renderHealth();
+
+  let mouseX = area.clientWidth / 2, mouseY = area.clientHeight / 2;
+  let hasMouseMoved = false;
+  const dots = [];
+  const speed = 65;
+  let lastFrameTime = performance.now();
+  let rafId, spawnInterval, dashCheckInterval;
+
+  function updateShieldDisplay(){
+    const s = document.getElementById('sniper-shield');
+    if(s) s.textContent = 'Shields: ' + shields;
+  }
+
+  function onMouseMove(e){
+    const rect = area.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+    hasMouseMoved = true;
+  }
+  area.addEventListener('mousemove', onMouseMove);
+
+  const circleEl = document.createElement('div');
+  circleEl.className = 'boss-yellow-circle';
+  area.appendChild(circleEl);
+  const CIRCLE_RADIUS = 30;
+  let circlePos = { x:0, y:0 };
+  function placeCircle(){
+    const rect = area.getBoundingClientRect();
+    circlePos = { x: rect.width/2, y: rect.height/2 };
+    circleEl.style.left = circlePos.x + 'px';
+    circleEl.style.top = circlePos.y + 'px';
+  }
+  placeCircle();
+
+  function spawnDot(){
+    const rect = area.getBoundingClientRect();
+    const margin = 30;
+    const corners = [
+      { x: margin, y: margin },
+      { x: rect.width - margin, y: margin },
+      { x: margin, y: rect.height - margin },
+      { x: rect.width - margin, y: rect.height - margin }
+    ];
+    const corner = corners[randInt(0,3)];
+    const el = document.createElement('div');
+    el.className = 'sniper-dot';
+    area.appendChild(el);
+    const dot = { el, x: corner.x, y: corner.y, dashing:false, dashDx:0, dashDy:0, dashTimeLeft:0, hitCircleThisDash:false, spawnTime: performance.now() };
+    el.style.left = dot.x+'px';
+    el.style.top = dot.y+'px';
+    dots.push(dot);
+  }
+  function spawnWave(){
+    spawnDot();
+    if(Math.random() < 0.5) spawnDot();
+  }
+  spawnWave();
+
+  spawnInterval = setInterval(()=>{ if(!done) spawnWave(); }, 3000*ivMul());
+
+  const DASH_SPEED = 400;
+  const DASH_DURATION = 0.5;
+  dashCheckInterval = setInterval(()=>{
+    if(done) return;
+    for(const dot of dots){
+      if(!dot.dashing && Math.random() < 0.1){
+        const distToCircle = Math.hypot(dot.x-circlePos.x, dot.y-circlePos.y);
+        if(distToCircle < CIRCLE_RADIUS) continue; // can't dash while colliding with the circle
+        const dx = mouseX-dot.x, dy = mouseY-dot.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist > 1){
+          dot.dashing = true;
+          dot.dashDx = dx/dist;
+          dot.dashDy = dy/dist;
+          dot.dashTimeLeft = DASH_DURATION;
+          dot.hitCircleThisDash = false;
+          dot.el.classList.add('dashing');
+        }
+      }
+    }
+  }, 1000*ivMul());
+
+  const DOT_RADIUS = 10;
+  const MIN_SEPARATION = DOT_RADIUS * 2;
+
+  let circleShielded = false;
+  let circleShieldTimeout = null;
+  function activateCircleShield(){
+    circleShielded = true;
+    circleEl.classList.add('shielded');
+    clearTimeout(circleShieldTimeout);
+    circleShieldTimeout = setTimeout(()=>{
+      circleShielded = false;
+      circleEl.classList.remove('shielded');
+    }, 10000*ivMul());
+  }
+
+  function damageBoss(){
+    bossHealth--;
+    renderHealth();
+    if(bossHealth <= 0){
+      done = true;
+      cleanup();
+      winBossChallenge(1);
+      return;
+    }
+    activateCircleShield();
+  }
+
+  function frame(now){
+    if(done) return;
+    const dt = Math.min((now-lastFrameTime)/1000, 0.05) * dtMul();
+    lastFrameTime = now;
+
+    for(const dot of dots){
+      if(dot.dashing){
+        dot.x += dot.dashDx*DASH_SPEED*dt;
+        dot.y += dot.dashDy*DASH_SPEED*dt;
+        dot.dashTimeLeft -= dt;
+        if(!dot.hitCircleThisDash){
+          const distToCircle = Math.hypot(dot.x-circlePos.x, dot.y-circlePos.y);
+          if(distToCircle < CIRCLE_RADIUS){
+            dot.hitCircleThisDash = true;
+            if(now - dot.spawnTime >= 2000 && !circleShielded){
+              damageBoss();
+              if(done) return;
+            }
+          }
+        }
+        if(dot.dashTimeLeft <= 0){
+          dot.dashing = false;
+          dot.el.classList.remove('dashing');
+        }
+      } else {
+        const dx = mouseX-dot.x, dy = mouseY-dot.y;
+        const dist = Math.hypot(dx,dy);
+        if(dist > 1){
+          dot.x += (dx/dist)*speed*dt;
+          dot.y += (dy/dist)*speed*dt;
+        }
+      }
+    }
+
+    for(let i=0;i<dots.length;i++){
+      for(let j=i+1;j<dots.length;j++){
+        const a = dots[i], b = dots[j];
+        const dx = b.x-a.x, dy = b.y-a.y;
+        let dist = Math.hypot(dx,dy);
+        if(dist < MIN_SEPARATION){
+          if(dist < 0.01){ dist = 0.01; }
+          const overlap = (MIN_SEPARATION - dist) / 2;
+          const nx = dx/dist, ny = dy/dist;
+          a.x -= nx*overlap;
+          a.y -= ny*overlap;
+          b.x += nx*overlap;
+          b.y += ny*overlap;
+        }
+      }
+    }
+
+    for(const dot of dots){
+      dot.el.style.left = dot.x+'px';
+      dot.el.style.top = dot.y+'px';
+      if(hasMouseMoved && !dot.dashing){
+        const dist = Math.hypot(mouseX-dot.x, mouseY-dot.y);
+        if(dist < 20){
+          if(shields > 0){
+            shields--;
+            updateShieldDisplay();
+            dot.el.remove();
+            const idx = dots.indexOf(dot);
+            if(idx !== -1) dots.splice(idx, 1);
+            break;
+          } else {
+            done = true;
+            cleanup();
+            sniperLose();
+            return;
+          }
+        }
+      }
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+  rafId = requestAnimationFrame(frame);
+
+  function cleanup(){
+    clearInterval(spawnInterval);
+    clearInterval(dashCheckInterval);
+    clearTimeout(circleShieldTimeout);
+    cancelAnimationFrame(rafId);
+    area.removeEventListener('mousemove', onMouseMove);
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ BOSS RUSH: COLOR PICKER ============ */
+function launchBossColorPicker(container){
+  let bossHealth = 3;
+  let done = false;
+
+  container.innerHTML = `
+    <h2>Color Picker Boss</h2>
+    <div class="boss-health-wrap">
+      <span class="boss-health-label">Boss Health</span>
+      <div class="boss-health-pips" id="boss-cp-health"></div>
+    </div>
+    <p>${owned.eyeSpy ? 'Hovering over anything except the 2 correct colors loses instantly. Click a correct one to deal damage.' : 'Hovering over anything except the correct color loses instantly. Click it to deal damage.'}</p>
+    <div id="target-swatch"></div>
+    <div id="cp-boss-warning" style="display:none; text-align:center; color:#ff2222; font-weight:900; font-size:32px; text-transform:uppercase; letter-spacing:1px; margin:10px 0;">MOVE CURSOR AWAY</div>
+    <div id="color-grid" class="boss-grid"></div>
+  `;
+
+  function renderHealth(){
+    const wrap = document.getElementById('boss-cp-health');
+    if(!wrap) return;
+    wrap.innerHTML = '';
+    for(let i=0;i<3;i++){
+      const p = document.createElement('div');
+      p.className = 'boss-health-pip' + (i < bossHealth ? '' : ' empty');
+      wrap.appendChild(p);
+    }
+  }
+  renderHealth();
+
+  let graceActive = false;
+  let graceTimeout = null;
+
+  function startGracePeriod(){
+    clearTimeout(graceTimeout);
+    graceActive = true;
+    const warning = document.getElementById('cp-boss-warning');
+    if(warning) warning.style.display = 'block';
+    graceTimeout = setTimeout(()=>{
+      graceActive = false;
+      const w = document.getElementById('cp-boss-warning');
+      if(w) w.style.display = 'none';
+    }, 1300*ivMul());
+  }
+
+  function buildRound(){
+    const targetH = randInt(0,359), targetS = randInt(45,90), targetL = randInt(30,68);
+    const targetColor = `hsl(${targetH},${targetS}%,${targetL}%)`;
+    let colors = [targetColor];
+    const numDecoys = randInt(1,3);
+    for(let i=0;i<numDecoys;i++){
+      let dh, ds, dl, candidate;
+      do {
+        dh = ((targetH + (randInt(0,1)?1:-1)*randInt(6,16)) + 360) % 360;
+        ds = clamp(targetS + randInt(-10,10), 20, 95);
+        dl = clamp(targetL + randInt(-10,10), 15, 85);
+        candidate = `hsl(${dh},${ds}%,${dl}%)`;
+      } while(colors.includes(candidate));
+      colors.push(candidate);
+    }
+    let secondTarget = null;
+    if(owned.eyeSpy){
+      let sh, ss, sl, candidate;
+      do {
+        sh = randInt(0,359); ss = randInt(35,95); sl = randInt(25,75);
+        candidate = `hsl(${sh},${ss}%,${sl}%)`;
+      } while(colors.includes(candidate));
+      secondTarget = candidate;
+      colors.push(secondTarget);
+    }
+    while(colors.length < 32){
+      const h = randInt(0,359), s = randInt(35,95), l = randInt(25,75);
+      const c = `hsl(${h},${s}%,${l}%)`;
+      if(!colors.includes(c)) colors.push(c);
+    }
+    colors = shuffle(colors);
+    const winningColors = secondTarget ? [targetColor, secondTarget] : [targetColor];
+
+    const swatch = document.getElementById('target-swatch');
+    swatch.style.background = secondTarget ? `linear-gradient(90deg, ${targetColor} 50%, ${secondTarget} 50%)` : targetColor;
+
+    const grid = document.getElementById('color-grid');
+    grid.innerHTML = '';
+    colors.forEach(c=>{
+      const sw = document.createElement('div');
+      sw.className = 'color-swatch';
+      sw.style.background = c;
+      sw.addEventListener('mouseenter', ()=>{
+        if(done) return;
+        if(graceActive) return;
+        if(!winningColors.includes(c)){
+          done = true;
+          cleanup();
+          loseOrSave();
+        }
+      });
+      sw.addEventListener('click', ()=>{
+        if(done) return;
+        if(winningColors.includes(c)){
+          bossHealth--;
+          renderHealth();
+          if(bossHealth <= 0){
+            done = true;
+            cleanup();
+            winBossChallenge(1);
+          } else {
+            buildRound();
+          }
+        }
+      });
+      grid.appendChild(sw);
+    });
+
+    startGracePeriod();
+  }
+  buildRound();
+
+  function cleanup(){
+    clearTimeout(graceTimeout);
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ BOSS RUSH: CLICKER ============ */
+function launchBossClicker(container){
+  let bossHealth = 10;
+  const startTime = 40 + (owned.extraTime ? 2 : 0);
+  let timeLeft = startTime, done = false;
+
+  container.innerHTML = `<h2>Clicker Boss</h2><p>The button has taken over your whole screen. Land 10 hits before time runs out!</p>`;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'boss-fullscreen-area';
+  document.body.appendChild(overlay);
+
+  const hud = document.createElement('div');
+  hud.className = 'boss-fullscreen-hud';
+  hud.innerHTML = `
+    <div class="boss-health-wrap">
+      <span class="boss-health-label">Boss Health</span>
+      <div class="boss-health-pips" id="boss-clicker-health"></div>
+    </div>
+    <div id="clicker-boss-timer" style="text-align:center; color:var(--gold); font-weight:700;">Time: ${startTime}</div>
+  `;
+  overlay.appendChild(hud);
+
+  function renderHealth(){
+    const wrap = document.getElementById('boss-clicker-health');
+    if(!wrap) return;
+    wrap.innerHTML = '';
+    for(let i=0;i<10;i++){
+      const p = document.createElement('div');
+      p.className = 'boss-health-pip' + (i < bossHealth ? '' : ' empty');
+      p.style.width = '12px'; p.style.height = '12px';
+      wrap.appendChild(p);
+    }
+  }
+  renderHealth();
+
+  const BTN_W = 110, BTN_H = 56;
+  const btn = document.createElement('button');
+  btn.id = 'clicker-btn';
+  btn.className = 'boss-btn';
+  btn.textContent = 'Click!';
+  overlay.appendChild(btn);
+
+  let pos = { x: window.innerWidth/2 - BTN_W/2, y: window.innerHeight/2 - BTN_H/2 };
+  let vel = { x: 220*(Math.random()<0.5?-1:1), y: 220*(Math.random()<0.5?-1:1) };
+  btn.style.left = pos.x+'px';
+  btn.style.top = pos.y+'px';
+
+  function onClick(e){
+    if(done) return;
+    e.stopPropagation();
+    bossHealth--;
+    renderHealth();
+    // clicking shoots the button around ~50x more aggressively than the normal Clicker challenge
+    const angle = Math.random()*Math.PI*2;
+    const power = (320 + Math.random()*220) * 50;
+    vel.x += Math.cos(angle)*power;
+    vel.y += Math.sin(angle)*power;
+    if(bossHealth <= 0){
+      done = true;
+      cleanup();
+      winBossChallenge(1);
+    }
+  }
+  btn.addEventListener('click', onClick);
+
+  const timerInt = setInterval(()=>{
+    if(done) return;
+    timeLeft--;
+    const t = document.getElementById('clicker-boss-timer');
+    if(t) t.textContent = 'Time: '+timeLeft;
+    if(timeLeft <= 0){
+      done = true;
+      cleanup();
+      loseOrSave();
+    }
+  }, 1000*ivMul());
+
+  let lastTime = performance.now();
+  let rafId;
+  function frame(now){
+    if(done) return;
+    const dt = Math.min((now-lastTime)/1000, 0.05) * dtMul();
+    lastTime = now;
+    const maxX = window.innerWidth - BTN_W;
+    const maxY = window.innerHeight - BTN_H;
+
+    pos.x += vel.x*dt;
+    pos.y += vel.y*dt;
+    vel.x *= 0.985;
+    vel.y *= 0.985;
+
+    // DVD-logo style: keep a minimum cruise speed so it never fully stops
+    const minSpeed = 180;
+    const spd = Math.hypot(vel.x, vel.y);
+    if(spd < minSpeed){
+      const scale = minSpeed / (spd || 1);
+      vel.x *= scale; vel.y *= scale;
+    }
+
+    if(pos.x < 0){ pos.x = 0; vel.x = Math.abs(vel.x); }
+    if(pos.x > maxX){ pos.x = maxX; vel.x = -Math.abs(vel.x); }
+    if(pos.y < 0){ pos.y = 0; vel.y = Math.abs(vel.y); }
+    if(pos.y > maxY){ pos.y = maxY; vel.y = -Math.abs(vel.y); }
+
+    btn.style.left = pos.x+'px';
+    btn.style.top = pos.y+'px';
+    rafId = requestAnimationFrame(frame);
+  }
+  rafId = requestAnimationFrame(frame);
+
+  function cleanup(){
+    clearInterval(timerInt);
+    cancelAnimationFrame(rafId);
+    overlay.remove();
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ BOSS RUSH: WHAT TIME? ============ */
+function launchBossWhatTime(container){
+  let bossHealth = 3;
+  let hearts = 3;
+  let done = false;
+
+  container.innerHTML = `<h2>What Time? Boss</h2><p>The inputs keep teleporting. Track their labels, enter the exact time, and hit Submit.</p>`;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'boss-fullscreen-area';
+  overlay.style.cursor = 'default';
+  document.body.appendChild(overlay);
+
+  const hud = document.createElement('div');
+  hud.className = 'boss-fullscreen-hud';
+  hud.innerHTML = `
+    <div class="boss-health-wrap">
+      <span class="boss-health-label">Boss Health</span>
+      <div class="boss-health-pips" id="boss-wt-health"></div>
+    </div>
+    <div class="boss-hearts-wrap" id="boss-wt-hearts"></div>
+    <div id="wt-boss-clock" style="font-family:'Bangers'; font-size:30px; color:var(--gold); text-align:center; margin: 6px 0;"></div>
+    <div id="wt-boss-feedback" style="text-align:center; min-height:20px; color:var(--danger); font-weight:700;"></div>
+    <div class="center-btn"><button class="btn-primary" id="wt-boss-submit">Submit</button></div>
+  `;
+  overlay.appendChild(hud);
+
+  function renderHealth(){
+    const wrap = document.getElementById('boss-wt-health');
+    wrap.innerHTML = '';
+    for(let i=0;i<3;i++){
+      const p = document.createElement('div');
+      p.className = 'boss-health-pip' + (i < bossHealth ? '' : ' empty');
+      wrap.appendChild(p);
+    }
+  }
+  function renderHearts(){
+    const wrap = document.getElementById('boss-wt-hearts');
+    wrap.innerHTML = '';
+    for(let i=0;i<3;i++){
+      const h = document.createElement('span');
+      h.className = 'boss-heart';
+      h.textContent = i < hearts ? '\u2764\ufe0f' : '\ud83e\udd0d';
+      wrap.appendChild(h);
+    }
+  }
+  renderHealth();
+  renderHearts();
+
+  const clockEl = document.getElementById('wt-boss-clock');
+  function applyDamageVisuals(){
+    clockEl.classList.toggle('shake-extreme', bossHealth <= 2);
+    clockEl.style.opacity = bossHealth === 1 ? '0.2' : '1';
+  }
+
+  let simDate;
+  function newSimDate(){
+    simDate = new Date(
+      randInt(1, 9999), randInt(0, 11), randInt(1, 28),
+      randInt(0, 23), randInt(0, 59), randInt(0, 59)
+    );
+  }
+  newSimDate();
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function renderClock(){
+    clockEl.textContent =
+      `${simDate.getFullYear()}-${pad(simDate.getMonth()+1)}-${pad(simDate.getDate())} `+
+      `${pad(simDate.getHours())}:${pad(simDate.getMinutes())}:${pad(simDate.getSeconds())}`;
+  }
+  renderClock();
+  applyDamageVisuals();
+
+  // The What Time? date itself is never sped up, even in Fast mode.
+  const clockInt = setInterval(()=>{
+    if(done) return;
+    simDate = new Date(simDate.getTime() + 1000);
+    renderClock();
+  }, 1000);
+
+  const FIELDS = [
+    { id:'year', label:'YEAR', get:()=>simDate.getFullYear() },
+    { id:'month', label:'MONTH', get:()=>simDate.getMonth()+1 },
+    { id:'day', label:'DAY', get:()=>simDate.getDate() },
+    { id:'hour', label:'HOUR', get:()=>simDate.getHours() },
+    { id:'minute', label:'MIN', get:()=>simDate.getMinutes() },
+    { id:'second', label:'SEC', get:()=>simDate.getSeconds() }
+  ];
+  const fieldEls = {};
+  FIELDS.forEach(f=>{
+    const wrap = document.createElement('div');
+    wrap.className = 'wt-boss-field';
+    wrap.innerHTML = `<label>${f.label}</label><input type="number" id="wt-boss-${f.id}">`;
+    overlay.appendChild(wrap);
+    fieldEls[f.id] = wrap;
+  });
+
+  function placeField(el){
+    const margin = 100;
+    const maxX = Math.max(window.innerWidth - margin, margin);
+    const maxY = Math.max(window.innerHeight - margin, margin);
+    el.style.left = randInt(20, maxX) + 'px';
+    el.style.top = randInt(150, maxY) + 'px';
+  }
+  Object.values(fieldEls).forEach(placeField);
+
+  const teleportInt = setInterval(()=>{
+    if(done) return;
+    Object.values(fieldEls).forEach(el=>{
+      if(Math.random() < 0.75) placeField(el);
+    });
+  }, 2000*ivMul());
+
+  function onSubmit(){
+    if(done) return;
+    let correct = true;
+    FIELDS.forEach(f=>{
+      const el = document.getElementById('wt-boss-'+f.id);
+      const val = +el.value;
+      if(val !== f.get()) correct = false;
+    });
+    const fb = document.getElementById('wt-boss-feedback');
+    if(correct){
+      if(fb) fb.textContent = '';
+      bossHealth--;
+      renderHealth();
+      applyDamageVisuals();
+      if(bossHealth <= 0){
+        done = true;
+        cleanup();
+        winBossChallenge(1);
+        return;
+      }
+      newSimDate();
+      renderClock();
+    } else {
+      hearts--;
+      renderHearts();
+      if(fb) fb.textContent = 'Wrong!';
+      if(hearts <= 0){
+        done = true;
+        cleanup();
+        loseOrSave();
+      }
+    }
+  }
+  document.getElementById('wt-boss-submit').addEventListener('click', onSubmit);
+
+  function cleanup(){
+    clearInterval(clockInt);
+    clearInterval(teleportInt);
+    overlay.remove();
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ BOSS RUSH: TYPING ============ */
+function launchBossTyping(container){
+  let bossHealth = 3;
+  let done = false;
+  let phase = 'typing'; // 'typing' | 'math'
+  let sentence = TYPING_SENTENCES[randInt(0, TYPING_SENTENCES.length-1)];
+  let idx = 0;
+
+  container.innerHTML = `
+    <h2>Typing Boss</h2>
+    <div class="boss-health-wrap">
+      <span class="boss-health-label">Boss Health</span>
+      <div class="boss-health-pips" id="boss-typing-health"></div>
+    </div>
+    <p>Type the sentence with the on-screen keyboard, then solve the math question that follows to land the hit.</p>
+    <div id="typing-sentence"></div>
+    <div id="typing-math" class="hidden"></div>
+    <input type="number" id="typing-math-input" class="hidden">
+    <div class="center-btn"><button class="btn-primary hidden" id="typing-math-submit">Submit</button></div>
+    <div id="typing-keyboard"></div>
+    <div id="typing-legend">
+      <span><i class="legend-swatch" style="background:var(--gold)"></i> lowercase L</span>
+      <span><i class="legend-swatch" style="background:#4ade80"></i> uppercase i</span>
+      <span><i class="legend-swatch" style="background:var(--danger)"></i> symbols</span>
+    </div>
+  `;
+
+  function renderHealth(){
+    const wrap = document.getElementById('boss-typing-health');
+    wrap.innerHTML = '';
+    for(let i=0;i<3;i++){
+      const p = document.createElement('div');
+      p.className = 'boss-health-pip' + (i < bossHealth ? '' : ' empty');
+      wrap.appendChild(p);
+    }
+  }
+  renderHealth();
+
+  const sentenceEl = document.getElementById('typing-sentence');
+  const keyboardEl = document.getElementById('typing-keyboard');
+  const mathEl = document.getElementById('typing-math');
+  const mathInput = document.getElementById('typing-math-input');
+  const mathSubmit = document.getElementById('typing-math-submit');
+
+  const chars = [];
+  const lowers = 'abcdefghijklmnopqrstuvwxyz'.split('');
+  lowers.forEach(c=> chars.push(c));
+  lowers.forEach(c=> chars.push(c.toUpperCase()));
+  chars.push('.', ',', '?', '!');
+
+  const keyButtons = [];
+  chars.forEach(c=>{
+    const b = document.createElement('button');
+    b.className = 'key-btn';
+    b.textContent = c;
+    b.dataset.char = c;
+    if(c === 'l'){ b.style.color = 'var(--gold)'; }
+    else if(c === 'I'){ b.style.color = '#4ade80'; }
+    else if(c === '.' || c === ',' || c === '?' || c === '!'){ b.style.color = 'var(--danger)'; }
+    b.addEventListener('click', ()=>onKeyPress(c));
+    keyboardEl.appendChild(b);
+    keyButtons.push(b);
+  });
+  const spaceBtn = document.createElement('button');
+  spaceBtn.className = 'key-btn wide';
+  spaceBtn.textContent = 'Space';
+  spaceBtn.dataset.char = ' ';
+  spaceBtn.addEventListener('click', ()=>onKeyPress(' '));
+  keyboardEl.appendChild(spaceBtn);
+  keyButtons.push(spaceBtn);
+
+  function shuffleKeyboard(){
+    keyButtons.forEach(b=>{ b.style.order = randInt(0,1000); });
+  }
+  shuffleKeyboard();
+
+  function updateSpotted(){
+    if(!owned.spotted) return;
+    const expected = sentence[idx];
+    keyButtons.forEach(b=>{
+      b.classList.toggle('spotted', b.dataset.char === expected);
+    });
+  }
+
+  function renderSentence(){
+    let html = '';
+    for(let i=0;i<sentence.length;i++){
+      const ch = sentence[i] === ' ' ? '&nbsp;' : sentence[i];
+      if(i < idx) html += `<span class="done">${ch}</span>`;
+      else if(i === idx) html += `<span class="current">${ch}</span>`;
+      else html += `<span class="todo">${ch}</span>`;
+    }
+    sentenceEl.innerHTML = html;
+  }
+  renderSentence();
+  updateSpotted();
+
+  let mathAnswer = 0;
+  function startMathPhase(){
+    phase = 'math';
+    keyboardEl.classList.add('hidden');
+    mathEl.classList.remove('hidden');
+    mathInput.classList.remove('hidden');
+    mathSubmit.classList.remove('hidden');
+    mathInput.value = '';
+    const ops = ['+','-','*','/'];
+    const op = ops[randInt(0,3)];
+    let a, b, question;
+    if(op === '+'){ a = randInt(1,50); b = randInt(1,50); mathAnswer = a+b; question = `${a} + ${b} = ?`; }
+    else if(op === '-'){ a = randInt(1,50); b = randInt(1,50); mathAnswer = a-b; question = `${a} - ${b} = ?`; }
+    else if(op === '*'){ a = randInt(1,12); b = randInt(1,12); mathAnswer = a*b; question = `${a} x ${b} = ?`; }
+    else { b = randInt(1,12); const ans = randInt(1,12); a = b*ans; mathAnswer = ans; question = `${a} / ${b} = ?`; }
+    mathEl.textContent = question;
+  }
+
+  function onMathSubmit(){
+    if(done || phase !== 'math') return;
+    const val = +mathInput.value;
+    if(val === mathAnswer){
+      bossHealth--;
+      renderHealth();
+      if(bossHealth <= 0){
+        done = true;
+        cleanup();
+        winBossChallenge(3);
+        return;
+      }
+      sentence = TYPING_SENTENCES[randInt(0, TYPING_SENTENCES.length-1)];
+      idx = 0;
+      phase = 'typing';
+      mathEl.classList.add('hidden');
+      mathInput.classList.add('hidden');
+      mathSubmit.classList.add('hidden');
+      keyboardEl.classList.remove('hidden');
+      renderSentence();
+      shuffleKeyboard();
+      updateSpotted();
+    } else {
+      done = true;
+      cleanup();
+      loseOrSave();
+    }
+  }
+  mathSubmit.addEventListener('click', onMathSubmit);
+
+  function onKeyPress(c){
+    if(done || phase !== 'typing') return;
+    const expected = sentence[idx];
+    if(c === expected){
+      idx++;
+      renderSentence();
+      if(idx >= sentence.length){
+        startMathPhase();
+        return;
+      }
+      shuffleKeyboard();
+      updateSpotted();
+    } else {
+      done = true;
+      cleanup();
+      loseOrSave();
+    }
+  }
+
+  function cleanup(){
+    mathSubmit.removeEventListener('click', onMathSubmit);
+  }
+  currentCleanup = cleanup;
+}
+
+/* ============ DISPATCH TABLE ============ */
+const LAUNCHERS = {
+  sniper: launchSniper,
+  typing: launchTyping,
+  clicker: launchClicker,
+  colorpicker: launchColorPicker,
+  whattime: launchWhatTime
+};
+
+const BOSS_LAUNCHERS = {
+  sniper: launchBossSniper,
+  typing: launchBossTyping,
+  clicker: launchBossClicker,
+  colorpicker: launchBossColorPicker,
+  whattime: launchBossWhatTime
+};
+
+/* ============ INIT ============ */
+updatePointsDisplay();
+renderPips(document.getElementById('menu-pips'), 0, -1);
+updateModeButtonVisibility();
+updateMusicButtonVisibility();
+renderShop();
+
+let alreadyWon = false;
+try{ alreadyWon = localStorage.getItem(WINNER_STORAGE_KEY) === 'true'; }catch(e){}
+if(alreadyWon){
+  triggerWinnerScreen();
+}
+</script>
+</body>
+</html>
