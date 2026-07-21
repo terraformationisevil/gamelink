@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta property="og:title" content="Gamelink" />
+<meta property="og:description" content="A site with some of my HTML games that ive made." />
+<meta property="og:url" content="https://terraformationisevil.github.io/gamelink/" />
+<meta property="og:image" content="https://github.io" />
+<meta property="og:type" content="website" />
+<meta name="theme-color" content="#ff3d81" />
+<meta name="google-site-verification" content="c9cVNMpq5BTOlIUpOIjyVx-1FmkgvbsIUX1b8nhtWHo" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GameLink</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rubik:wght@500;700&family=Baloo+2:wght@700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page-bg: #14101f;
+    --panel: #141418;
+    --border: #232327;
+    --text: #e7e3da;
+    --text-dim: #6f6b62;
+
+    --mys-panel: #181818;
+    --mys-panel-hi: #202020;
+    --mys-panel-lo: #0f0f0f;
+    --mys-orange: #e05c00;
+    --mys-bevel-hi: #484848;
+    --mys-bevel-lo: #111111;
+
+    --rumble-pink: #ff3d81;
+    --rumble-pink-dark: #e02e6d;
+    --rumble-shelf: #a11f4c;
+    --rumble-blue: #34e2e2;
+    --rumble-lime: #4ade80;
+
+    --farm-green: #4a7c2e;
+    --farm-green-hi: #5a8c3e;
+
+    --farmm-leaf-400: #63a13c;
+    --farmm-leaf-600: #3d6a1e;
+    --farmm-soil-700: #3d2817;
+    --farmm-soil-800: #2a1c12;
+    --farmm-soil-900: #1c130d;
+    --farmm-soil-950: #120c08;
+    --farmm-gold-300: #ffd875;
+    --farmm-gold-400: #f4bd52;
+  }
+  *{ box-sizing: border-box; margin:0; padding:0; }
+  body{
+    background:
+      radial-gradient(circle at 20% 15%, rgba(255,61,129,0.12), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(52,226,226,0.10), transparent 45%),
+      var(--page-bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    display:flex;
+    flex-direction: column;
+    align-items:center;
+    justify-content:center;
+    padding: 40px 20px;
+  }
+  header{ text-align:center; margin-bottom: 48px; }
+  h1{
+    font-family:'Bebas Neue', sans-serif;
+    font-size: 44px;
+    letter-spacing: 8px;
+    color: #fff;
+  }
+  .subtitle{
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+
+  .link-grid{
+    display:flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    justify-content:center;
+  }
+
+  .game-btn{
+    position: relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-decoration:none;
+    user-select: none;
+  }
+  .label{ display:flex; align-items:baseline; }
+
+  /* ============ MyS — Mysneaker's minesweeper tile ============
+     Same raised pixel-bevel every cell on the board uses:
+     inset light edge top-left, inset dark edge bottom-right,
+     flat solid color, sharp corners, no glow, no gradients. */
+  .btn-mys{
+    width: 176px;
+    height: 100px;
+    background: var(--mys-panel);
+    box-shadow:
+      inset 4px 4px 0 var(--mys-bevel-hi),
+      inset -4px -4px 0 var(--mys-bevel-lo);
+    border-radius: 0;
+    font-family:'Bebas Neue', sans-serif;
+    font-size: 38px;
+    letter-spacing: 3px;
+    color: var(--mys-orange);
+    transition: background .05s;
+  }
+  .btn-mys:hover{ background: var(--mys-panel-hi); }
+  .btn-mys:active{
+    background: var(--mys-panel-lo);
+    box-shadow:
+      inset 4px 4px 0 var(--mys-bevel-lo),
+      inset -4px -4px 0 var(--mys-bevel-hi);
+  }
+  .btn-mys:focus-visible{ outline: 2px solid var(--mys-orange); outline-offset: 3px; }
+  .btn-mys{ --accent: var(--mys-orange); }
+
+  /* ============ 5CR / 5CRm — the game's own .btn-primary ============
+     Vertical gradient fill, rounded corners, and the solid
+     "shelf" box-shadow that gives the button its chunky 3D
+     depth, exactly as used on Play/Continue in-game. Pressing
+     scales it down instead of moving it, same as the source. */
+  .btn-5cr, .btn-5crm{
+    width: 176px;
+    height: 100px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--rumble-pink), var(--rumble-pink-dark));
+    box-shadow: 0 8px 0 var(--rumble-shelf), 0 10px 20px rgba(255,61,129,.35);
+    font-family:'Rubik', sans-serif;
+    font-weight: 700;
+    font-size: 32px;
+    letter-spacing: 1px;
+    transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+  }
+  .btn-5cr:hover, .btn-5crm:hover{ filter: brightness(1.08); }
+  .btn-5cr:active, .btn-5crm:active{ transform: scale(0.96); }
+  .btn-5cr:focus-visible, .btn-5crm:focus-visible{ outline: 2px solid #fff; outline-offset: 3px; }
+  .btn-5cr, .btn-5crm{ --accent: #ff8fb8; }
+
+  .c-num{ color: var(--rumble-blue); }
+  .c-m{ color: var(--rumble-lime); }
+
+  /* ============ Farm — the original's flat .btn/.tab ============
+     Plain solid fill, small 5px corner radius, no shadow, no
+     gradient — a small color shift on hover is the only motion,
+     exactly how the base game's buttons behave. */
+  .btn-farm{
+    width: 176px;
+    height: 100px;
+    border-radius: 5px;
+    background: var(--farm-green);
+    font-family: Arial, sans-serif;
+    font-weight: 700;
+    font-size: 34px;
+    color: var(--farmm-soil-700);
+    transition: background .1s;
+  }
+  .btn-farm:hover{ background: var(--farm-green-hi); }
+  .btn-farm:active{ background: var(--farm-green); filter: brightness(0.92); }
+  .btn-farm:focus-visible{ outline: 2px solid var(--farm-green-hi); outline-offset: 3px; }
+  .btn-farm{ --accent: var(--farm-green-hi); }
+
+  /* ============ FarmM — the modernized reskin's item-panel card ============
+     Not the glossy pill button — the soil-toned card panel that
+     rows (market items / codex entries) sit inside: diagonal soil
+     gradient, 16px radius, hairline border, soft drop shadow. Text
+     is the same leaf-green as the panel's item copy. */
+  .btn-farmm{
+    width: 176px;
+    height: 100px;
+    border-radius: 16px;
+    background: linear-gradient(160deg, var(--farmm-soil-700), var(--farmm-soil-800));
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+    border: 1px solid rgba(255,255,255,.05);
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: 0.2px;
+    color: var(--farmm-leaf-400);
+    transition: border-color .15s ease, filter .15s ease;
+  }
+  .btn-farmm:hover{
+    filter: brightness(1.1);
+    border-color: var(--farmm-gold-400);
+  }
+  .btn-farmm:active{ filter: brightness(0.95); }
+  .btn-farmm:focus-visible{ outline: 2px solid var(--farmm-leaf-400); outline-offset: 3px; }
+  .btn-farmm{ --accent: var(--farmm-leaf-400); }
+
+  /* ============ Game — unique, standalone: plain white, square corners, black text ============ */
+  .btn-game{
+    width: 176px;
+    height: 100px;
+    border-radius: 0;
+    background: #ffffff;
+    font-family: Arial, sans-serif;
+    font-weight: 700;
+    font-size: 24px;
+    color: #000000;
+    transition: background .1s;
+  }
+  .btn-game:hover{ background: #e6e6e6; }
+  .btn-game:active{ background: #cccccc; }
+  .btn-game:focus-visible{ outline: 2px solid #000; outline-offset: 3px; }
+
+  /* Preview card */
+  .preview{
+    position:absolute;
+    bottom: calc(100% + 16px);
+    left: 50%;
+    transform: translateX(-50%) translateY(6px);
+    width: 280px;
+    opacity:0;
+    visibility:hidden;
+    pointer-events:none;
+    transition: opacity .15s ease, transform .15s ease;
+    z-index: 30;
+  }
+  .game-btn:hover .preview, .game-btn:focus-visible .preview{
+    opacity:1;
+    visibility:visible;
+    transform: translateX(-50%) translateY(0);
+  }
+  .preview-inner{
+    background: var(--panel);
+    border: 1px solid var(--accent, var(--border));
+    border-radius: 10px;
+    overflow:hidden;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+  }
+  .preview-img-wrap{
+    width:100%;
+    aspect-ratio: 16/10;
+    background:
+      linear-gradient(90deg, #1c1c20 25%, #232327 37%, #1c1c20 63%) repeat;
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+  .preview-img-wrap img{
+    width:100%; height:100%; object-fit: cover; display:block;
+  }
+  @keyframes shimmer{ 0%{ background-position: 100% 0; } 100%{ background-position: 0 0; } }
+  .preview-caption{
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+  }
+  .preview-arrow{
+    position:absolute;
+    left:50%;
+    bottom: -7px;
+    transform: translateX(-50%) rotate(45deg);
+    width: 12px; height:12px;
+    background: var(--panel);
+    border-right: 1px solid var(--accent, var(--border));
+    border-bottom: 1px solid var(--accent, var(--border));
+  }
+
+  footer{
+    margin-top: 56px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .footer-link{
+    display: block;
+    margin-top: 8px;
+    color: var(--text-dim);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .footer-link:hover{ color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce){
+    .game-btn, .preview{ transition:none; }
+    .preview-img-wrap{ animation:none; }
+  }
+
+  /* ============ Locked state ============ */
+  .game-btn{
+    margin-top: 26px; /* reserve space for the [Down] tag above every button, so layout doesn't shift when toggled */
+  }
+  .game-btn[data-locked="true"]{
+    cursor: default;
+    pointer-events: auto; /* allow focus/hover styling, but click is prevented in JS */
+  }
+  .game-btn[data-locked="true"] > *:not(.down-tag){
+    filter: brightness(0.45) saturate(0.7);
+  }
+  .game-btn[data-locked="true"]:hover > *:not(.down-tag),
+  .game-btn[data-locked="true"]:active > *:not(.down-tag){
+    filter: brightness(0.45) saturate(0.7);
+  }
+  .game-btn[data-locked="true"] .preview{
+    display: none;
+  }
+  .down-tag{
+    display: none;
+    position: absolute;
+    top: -26px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #ff3b3b;
+    white-space: nowrap;
+  }
+  .game-btn[data-locked="true"] .down-tag{
+    display: block;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GameLink</h1>
+  <div class="subtitle">pick a game</div>
+</header>
+
+<div class="link-grid">
+
+  <a class="game-btn btn-5cr" href="https://terraformationisevil.github.io/gamelink/fivechallengerumble/"
+     data-target="https://terraformationisevil.github.io/gamelink/fivechallengerumble/"
+     data-locked="false">
+    <span class="down-tag">[Down]</span>
+    <span class="label"><span class="c-num">5CR</span></span>
+    <div class="preview">
+      <div class="preview-inner">
+        <div class="preview-img-wrap"><img loading="lazy" alt="5 Challenge Rumble preview"></div>
+        <div class="preview-caption">5 Challenge Rumble</div>
+      </div>
+      <div class="preview-arrow"></div>
+    </div>
+  </a>
+
+  <a class="game-btn btn-5crm" href="https://terraformationisevil.github.io/gamelink/fivechallengerumblemobile/"
+     data-target="https://terraformationisevil.github.io/gamelink/fivechallengerumblemobile/"
+     data-locked="false">
+    <span class="down-tag">[Down]</span>
+    <span class="label"><span class="c-num">5CR</span><span class="c-m">m</span></span>
+    <div class="preview">
+      <div class="preview-inner">
+        <div class="preview-img-wrap"><img loading="lazy" alt="5 Challenge Rumble Mobile preview"></div>
+        <div class="preview-caption">5 Challenge Rumble · Mobile</div>
+      </div>
+      <div class="preview-arrow"></div>
+    </div>
+  </a>
+
+  <a class="game-btn btn-mys" href="https://terraformationisevil.github.io/gamelink/mysneaker"
+     data-target="https://terraformationisevil.github.io/gamelink/mysneaker"
+     data-locked="false">
+    <span class="down-tag">[Down]</span>
+    <span class="label"><span>MyS</span></span>
+    <div class="preview">
+      <div class="preview-inner">
+        <div class="preview-img-wrap"><img loading="lazy" alt="Mysneaker preview"></div>
+        <div class="preview-caption">Mysneaker</div>
+      </div>
+      <div class="preview-arrow"></div>
+    </div>
+  </a>
+
+  <a class="game-btn btn-farmm" href="https://terraformationisevil.github.io/gamelink/farmmodernized/"
+     data-target="https://terraformationisevil.github.io/gamelink/farmmodernized/"
+     data-locked="false">
+    <span class="down-tag">[Down]</span>
+    <span class="label">FarmM</span>
+    <div class="preview">
+      <div class="preview-inner">
+        <div class="preview-img-wrap"><img loading="lazy" alt="Farm Automation Tycoon (modernized) preview"></div>
+        <div class="preview-caption">Farm Automation Tycoon · Modernized</div>
+      </div>
+      <div class="preview-arrow"></div>
+    </div>
+  </a>
+
+  <a class="game-btn btn-farm" href="https://terraformationisevil.github.io/gamelink/farm/"
+     data-target="https://terraformationisevil.github.io/gamelink/farm/"
+     data-locked="false">
+    <span class="down-tag">[Down]</span>
+    <span class="label">Farm</span>
+    <div class="preview">
+      <div class="preview-inner">
+        <div class="preview-img-wrap"><img loading="lazy" alt="Farm Automation Tycoon preview"></div>
+        <div class="preview-caption">Farm Automation Tycoon</div>
+      </div>
+      <div class="preview-arrow"></div>
+    </div>
+  </a>
+
+  <a class="game-btn btn-game" href="https://terraformationisevil.github.io/gamelink/game/"
+     data-locked="false">
+    <span class="down-tag">[Down]</span>
+    <span class="label">The Game</span>
+  </a>
+
+</div>
+
+<footer>
+  terraformationisevil
+  <a class="footer-link" href="https://terraformationisevil.github.io/primary/">PRIMARY PAGE</a>
+</footer>
+
+<script>
+  // Lazy-load each screenshot only the first time its button is hovered/focused,
+  // via a free screenshot API (microlink.io) — no key required for light use.
+  document.querySelectorAll('.game-btn').forEach(btn => {
+    const isLocked = btn.dataset.locked === 'true';
+
+    // Locked buttons don't navigate anywhere.
+    if (isLocked){
+      btn.addEventListener('click', (e) => e.preventDefault());
+    }
+
+    const img = btn.querySelector('.preview-img-wrap img');
+    if (!img) return;
+    let loaded = false;
+    const load = () => {
+      if (loaded || isLocked) return; // no preview when locked
+      loaded = true;
+      const target = encodeURIComponent(btn.dataset.target);
+      img.src = `https://api.microlink.io/?url=${target}&screenshot=true&meta=false&embed=screenshot.url`;
+    };
+    btn.addEventListener('mouseenter', load);
+    btn.addEventListener('focus', load);
+  });
+</script>
+
+</body>
+</html>
