@@ -1,0 +1,2628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Farm Automation Tycoon</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: Arial, sans-serif; 
+      background: #2d5016; 
+      color: #fff;
+      overflow: hidden;
+    }
+    #game-container { 
+      display: flex; 
+      height: 100vh;
+    }
+    #left-panel {
+      width: 250px;
+      background: #1a3010;
+      padding: 15px;
+      overflow-y: auto;
+    }
+    #main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    #top-bar {
+      background: #1a3010;
+      padding: 15px;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    #tabs {
+      display: flex;
+      gap: 10px;
+      background: #1a3010;
+      padding: 10px;
+    }
+    .tab {
+      padding: 10px 20px;
+      background: #2d5016;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    .tab.active {
+      background: #4a7c2e;
+    }
+    #content-area {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .farm-grid {
+      display: inline-block;
+      position: relative;
+    }
+    .plant-plot {
+      display: inline-block;
+      width: 80px;
+      height: 80px;
+      background: #3d2817;
+      border: 2px solid #5a3d24;
+      margin: 5px;
+      position: relative;
+      cursor: pointer;
+      border-radius: 5px;
+      vertical-align: top;
+    }
+    .plant-plot:hover {
+      border-color: #8b6239;
+    }
+    .plant-plot.machine {
+      background: #2a2a2a;
+      border-color: #555;
+    }
+    .plant-growing {
+      position: absolute;
+      bottom: 5px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 30px;
+    }
+    .machine-emoji {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 40px;
+    }
+    .machine-id {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-size: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .plant-progress {
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      right: 5px;
+      height: 6px;
+      background: #222;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .plant-progress-bar {
+      height: 100%;
+      background: #4a7c2e;
+      transition: width 0.3s;
+    }
+    .employee-marker {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: #ffcc00;
+      border-radius: 50%;
+      border: 2px solid #ff9900;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.5s;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .inventory-item {
+      background: #3d2817;
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: grab;
+    }
+    .inventory-item:active {
+      cursor: grabbing;
+    }
+    .market-item {
+      background: #3d2817;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      background: #4a7c2e;
+      border: none;
+      color: #fff;
+      padding: 8px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background: #5a8c3e;
+    }
+    .btn:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+    .btn-small {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+    .machine-card {
+      background: #3d2817;
+      padding: 15px;
+      margin: 10px;
+      border-radius: 5px;
+      display: inline-block;
+      vertical-align: top;
+      width: 200px;
+    }
+    .machine-card h3 {
+      margin-bottom: 10px;
+    }
+    .machine-grid {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    #modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    #modal.active {
+      display: flex;
+    }
+    .modal-content {
+      background: #2d5016;
+      padding: 30px;
+      border-radius: 10px;
+      max-width: 800px;
+      max-height: 80vh;
+      overflow-y: auto;
+      position: relative;
+    }
+    .modal-with-inventory {
+      display: flex;
+      gap: 20px;
+    }
+    .modal-main {
+      flex: 1;
+    }
+    .modal-inventory {
+      width: 200px;
+      background: #1a3010;
+      padding: 10px;
+      border-radius: 5px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .modal-inventory h3 {
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .modal-inv-item {
+      background: #3d2817;
+      padding: 8px;
+      margin: 5px 0;
+      border-radius: 3px;
+      font-size: 12px;
+      cursor: grab;
+    }
+    .modal-inv-item:active {
+      cursor: grabbing;
+    }
+    .close-modal {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 24px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      color: #fff;
+    }
+    .slot {
+      width: 60px;
+      height: 60px;
+      background: #1a3010;
+      border: 2px dashed #4a7c2e;
+      display: inline-block;
+      margin: 5px;
+      position: relative;
+      border-radius: 5px;
+    }
+    .slot.filled {
+      border-style: solid;
+    }
+    .slot-item {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 20px;
+    }
+    .slot-count {
+      position: absolute;
+      bottom: 2px;
+      right: 4px;
+      font-size: 12px;
+      background: rgba(0,0,0,0.7);
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .machine-slots {
+      display: flex;
+      gap: 10px;
+      margin: 15px 0;
+      flex-wrap: wrap;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background: #1a3010;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #4a7c2e;
+      transition: width 0.3s;
+    }
+    .employee-card {
+      background: #3d2817;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .upgrade-card {
+      background: #3d2817;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    select {
+      padding: 5px;
+      background: #1a3010;
+      color: #fff;
+      border: 1px solid #4a7c2e;
+      border-radius: 3px;
+      margin: 5px 0;
+      width: 100%;
+    }
+    input[type="number"] {
+      padding: 5px;
+      background: #1a3010;
+      color: #fff;
+      border: 1px solid #4a7c2e;
+      border-radius: 3px;
+      margin: 5px 0;
+      width: 100%;
+    }
+    .placing-machine {
+      border: 3px solid #ffcc00 !important;
+      animation: pulse 0.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    .job-config {
+      background: #2d5016;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .codex-section {
+      margin: 20px 0;
+    }
+    .codex-item {
+      background: #3d2817;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+      border-left: 4px solid #4a7c2e;
+    }
+    .codex-item.locked {
+      opacity: 0.5;
+      border-left-color: #666;
+    }
+    .codex-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .codex-emoji {
+      font-size: 32px;
+    }
+    .codex-title {
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .codex-description {
+      margin: 10px 0;
+      color: #ddd;
+    }
+    .codex-stats {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    .codex-stat {
+      background: #2d5016;
+      padding: 5px 10px;
+      border-radius: 3px;
+    }
+    .recipe-output-item {
+      margin: 5px 0;
+      padding: 5px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="left-panel">
+      <h2>Inventory</h2>
+      <div id="inventory"></div>
+    </div>
+    <div id="main-area">
+      <div id="top-bar">
+        <div><strong>Money:</strong> $<span id="money">500</span></div>
+        <div><strong>Time:</strong> <span id="game-time">0</span>s</div>
+      </div>
+      <div id="tabs">
+        <button class="tab active" onclick="switchTab('farm')">Farm</button>
+        <button class="tab" onclick="switchTab('market')">Market</button>
+        <button class="tab" onclick="switchTab('machines')">Machines</button>
+        <button class="tab" onclick="switchTab('employees')">Employees</button>
+        <button class="tab" onclick="switchTab('upgrades')">Upgrades</button>
+        <button class="tab" onclick="switchTab('codex')">Codex</button>
+      </div>
+      <div id="content-area">
+        <div id="farm-tab" class="tab-content"></div>
+        <div id="market-tab" class="tab-content" style="display:none;"></div>
+        <div id="machines-tab" class="tab-content" style="display:none;"></div>
+        <div id="employees-tab" class="tab-content" style="display:none;"></div>
+        <div id="upgrades-tab" class="tab-content" style="display:none;"></div>
+        <div id="codex-tab" class="tab-content" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal">
+    <div class="modal-content">
+      <button class="close-modal" onclick="closeModal()">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script>
+    // ===== EMOJI REFERENCE =====
+    // This section contains all emojis used in the game for easy reference and modification
+    // 
+    // PLANTS & NATURE:
+    // 🌾 🌽 🥕 🥔 🍅 🍓 🎃 🍇 🍎 🌳 🌲 ☕ 🌱 🍃 🌰
+    // 
+    // FOOD & PRODUCTS:
+    // 🥖 🌮 💧 🍞 🪵 ⚫ 🥤 🥧 🧃 🔥 📦 �
+    // 
+    // TOOLS & MACHINES:
+    // ⚙️ 🚰 🥣 🔥 📦 🧂 ♻️ 🪙 ⛏ ⚒ 🔨 🪛 🔧 ⛏️
+
+    // 
+    // MISC:
+    // ❓ ⭐ 💰 ⏱️ 🌟 ✨ 💎 ⚡ 🎯 📊 📈 🎲 🍀 ⚠️
+    // 
+    // SYMBOLS:
+    // ✓ ✗ ➜ ⬆️ ⬇️ ↔️ 🔄 ⚠️ ℹ️ 🔒 🔓 📌 🔔
+
+    // ===== CONFIGURATION =====
+    const CONFIG = {
+      plants: {
+        wheat: { name: 'Wheat', emoji: '🌾', growTime: 10, basePrice: 8, seedPrice: 2, description: 'A versatile grain crop that grows quickly. Can be ground into flour for baking.' },
+        corn: { name: 'Corn', emoji: '🌽', growTime: 15, basePrice: 12, seedPrice: 3, description: 'Sweet golden kernels that take a bit longer to grow. Great for making corn flour and various dishes.' },
+        carrot: { name: 'Carrot', emoji: '🥕', growTime: 12, basePrice: 10, seedPrice: 2, description: 'Crunchy orange root vegetable. Perfect for juicing into healthy carrot juice.' },
+        potato: { name: 'Potato', emoji: '🥔', growTime: 14, basePrice: 11, seedPrice: 3, description: 'Starchy tuber that grows underground. A staple food crop with many uses.' },
+        tomato: { name: 'Tomato', emoji: '🍅', growTime: 16, basePrice: 15, seedPrice: 4, description: 'Juicy red fruit (yes, fruit!). Essential for making tomato sauce and pizza.' },
+        strawberry: { name: 'Strawberry', emoji: '🍓', growTime: 18, basePrice: 18, seedPrice: 5, description: 'Sweet red berries perfect for jams and desserts. Grows in small bushes.' },
+        pumpkin: { name: 'Pumpkin', emoji: '🎃', growTime: 25, basePrice: 22, seedPrice: 8, description: 'Large orange gourd that takes time to mature. Great for pies and decoration.' },
+        grape_vine: { name: 'Grape Vine', emoji: '🍇', growTime: 28, basePrice: 25, seedPrice: 12, isTree: true, yields: ['grape', 'grape', 'leaves'], description: 'A climbing vine that produces sweet grapes. Can be processed into juice or wine.' },
+        apple_tree: { name: 'Apple Tree', emoji: '🍎', growTime: 30, basePrice: 20, seedPrice: 15, isTree: true, yields: ['apple', 'apple', 'leaves'], description: 'A fruit-bearing tree that takes time to mature. Produces delicious apples and leaves when harvested.' },
+        oak_tree: { name: 'Oak Tree', emoji: '🌳', growTime: 35, basePrice: 25, seedPrice: 20, isTree: true, yields: ['wood', 'wood', 'wood', 'leaves'], description: 'A sturdy hardwood tree. Provides valuable wood for crafting and leaves as a byproduct.' },
+        pine_tree: { name: 'Pine Tree', emoji: '🌲', growTime: 32, basePrice: 23, seedPrice: 18, isTree: true, yields: ['wood', 'wood', 'pine_cone'], description: 'An evergreen conifer that grows tall and straight. Produces wood and pine cones.' },
+        coffee_plant: { name: 'Coffee Plant', emoji: '☕', growTime: 22, basePrice: 28, seedPrice: 10, description: 'A tropical plant that produces coffee beans. Requires patience but worth the wait!' },
+        orange_tree: { name: 'Orange Tree', emoji: '🍊', growTime: 30, basePrice: 22, seedPrice: 15, isTree: true, yields: ['orange', 'orange', 'leaves'], description: 'A citrus tree that produces sweet oranges. Can be processed into juice or used in desserts.' },
+        lemon_tree: { name: 'Lemon Tree', emoji: '🍋', growTime: 30, basePrice: 24, seedPrice: 15, isTree: true, yields: ['lemon', 'lemon', 'leaves'], description: 'A sour citrus tree that produces lemons. Great for making lemonade and adding zest to dishes.' },
+        banana_tree: { name: 'Banana Tree', emoji: '🍌', growTime: 28, basePrice: 26, seedPrice: 12, isTree: true, yields: ['banana', 'banana', 'leaves'], description: 'A tropical tree that produces sweet bananas. Perfect for smoothies and snacks.' },
+        vanilla_plant: { name: 'Vanilla Plant', emoji: '🍀', growTime: 40, basePrice: 50, seedPrice: 30, description: 'A rare and exotic plant that produces vanilla pods. Highly valuable for baking and desserts.' },
+        cocoa_plant: { name: 'Cocoa Plant', emoji: '🍫', growTime: 38, basePrice: 45, seedPrice: 25, description: 'A tropical plant that produces cocoa beans. Essential for making chocolate and sweet treats.' },
+        hops: { name: 'Hops', emoji: '🍺', growTime: 20, basePrice: 30, seedPrice: 10, description: 'A climbing plant used in brewing beer. Grows quickly and yields valuable hops cones.' }
+      },
+      items: {
+        wheat_flour: { name: 'Wheat Flour', emoji: '🥖', basePrice: 20, description: 'Fine powder made from grinding wheat. Essential ingredient for making dough and baking.' },
+        corn_flour: { name: 'Corn Flour', emoji: '🌮', basePrice: 25, description: 'Ground corn meal with a distinctive flavor. Used in special recipes like pizza dough.' },
+        tortilla_dough: { name: 'Tortilla Dough', emoji: '🌮', basePrice: 30, description: 'A soft mixture of corn flour and water. Ready to be shaped into tortillas.' },
+        tortilla: { name: 'Tortilla', emoji: '🌮', basePrice: 80, description: 'A soft kernel made from corn flour and water. Perfect for holding taco fillings.' },
+        taco: { name: 'Taco', emoji: '🌮', basePrice: 130, description: 'A taco made with a tortilla, tomato, beef, and cheese.' },
+        hay_bale: { name: 'Hay Bale', emoji: '🌾', basePrice: 81, description: 'A compact bundle of dried wheat stalks. Used as animal feed or bedding.' },
+        cow: { name: 'Cow', emoji: '🐄', basePrice: 50, description: 'A gentle farm animal that produces milk. Requires hay bales for feeding.' },
+        lemonaid: { name: 'Lemonaid', emoji: '🍋', basePrice: 50, description: 'A refreshing drink made from fresh lemons and sugar. Perfect for hot days!' },
+        rich_orange_juice: { name: 'Rich Orange Juice', emoji: '🍊', basePrice: 50, description: 'A sweet and tangy juice made from fresh oranges. A delightful beverage.' },
+        bone: { name: 'Bone', emoji: '🦴', basePrice: 5, description: 'A sturdy bone from farm animals.' },
+        raw_beef: { name: 'Raw Beef', emoji: '🍖', basePrice: 40, description: 'Fresh cuts of beef from cows. Can be smoked for higher value.' },
+        smoked_beef: { name: 'Smoked Beef', emoji: '🍖', basePrice: 60, description: 'Tender smoked beef with a rich flavor. A premium meat product that sells well.' },
+        cheese: { name: 'Cheese', emoji: '🧀', basePrice: 10, description: 'A dairy product made from milk. Adds rich flavor to various dishes.' },
+        milk: { name: 'Milk', emoji: '🥛', basePrice: 5, description: 'Fresh milk from cows. Used in cooking and baking recipes.' },
+        unbaked_apple_pie: { name: 'Unbaked Apple Pie', emoji: '🥧', basePrice: 105, description: 'A pie assembled with fresh apples and pastry. Needs to be baked in an oven.' },
+        unbaked_pumpkin_pie: { name: 'Unbaked Pumpkin Pie', emoji: '🥧', basePrice: 75, description: 'A pie made with roasted pumpkin and pastry. Needs to be baked in an oven.' },
+        water: { name: 'Water', emoji: '💧', basePrice: 2, description: 'Pure, clean water pumped from the ground. Needed for mixing and crafting recipes.' },
+        dough: { name: 'Dough', emoji: '🍞', basePrice: 45, description: 'Soft mixture of flour and water. Ready to be baked into delicious bread.' },
+        bread: { name: 'Bread', emoji: '🍞', basePrice: 65, description: 'Freshly baked loaves with a golden crust. A staple food that sells well.' },
+        wood: { name: 'Wood', emoji: '🪵', basePrice: 8, description: 'Solid timber harvested from trees. Can be converted into charcoal for fuel.' },
+        charcoal: { name: 'Charcoal', emoji: '⚫', basePrice: 15, description: 'Fuel made by burning wood in a controlled environment. Essential for running ovens and cooking.' },
+        apple: { name: 'Apple', emoji: '🍎', basePrice: 25, description: 'Crisp, sweet fruit from apple trees. Can be eaten fresh or used in baking pies.' },
+        orange: { name: 'Orange', emoji: '🍊', basePrice: 30, description: 'Juicy citrus fruit from orange trees. Perfect for making fresh orange juice.' },
+        lemon: { name: 'Lemon', emoji: '🍋', basePrice: 28, description: 'Sour citrus fruit from lemon trees. Great for making lemonade and adding zest to dishes.' },
+        banana: { name: 'Banana', emoji: '🍌', basePrice: 32, description: 'Sweet tropical fruit from banana trees. Ideal for smoothies and snacks.' },
+        pure_alchohol: { name: 'Pure Alcohol', emoji: '🍺', basePrice: 160, description: 'Highly concentrated alcohol extracted from hops. Used in brewing beer and other beverages.' },
+        beer: { name: 'Beer', emoji: '🍺', basePrice: 190, description: 'Refreshing brewed beverage made from hops. A popular drink that sells well.' },
+        vanilla_ice_cream: { name: 'Vanilla Ice Cream', emoji: '🍨', basePrice: 80, description: 'Creamy dessert made with real vanilla pods. A luxurious treat that sells for a high price.' },
+        chocolate_bar: { name: 'Chocolate Bar', emoji: '🍫', basePrice: 70, description: 'Rich chocolate made from cocoa beans. A popular sweet treat that sells well.' },
+        chocolate_ice_cream: { name: 'Chocolate Ice Cream', emoji: '🍨', basePrice: 90, description: 'Decadent ice cream made with rich chocolate. A favorite dessert that commands a premium price.' },
+        ice_cream_mix: { name: 'Ice Cream Mix', emoji: '🍨', basePrice: 30, description: 'A creamy base mixture for making ice cream. Can be flavored with vanilla or chocolate.' },
+        leaves: { name: 'Leaves', emoji: '🍃', basePrice: 3, description: 'Green foliage from trees. Not very valuable, but can be sold as a byproduct.' },
+        fruit_punch: { name: 'Fruit Punch', emoji: '🍹', basePrice: 70, description: 'A vibrant drink made from a mix of tropical fruits. A refreshing beverage that sells well.' },
+        baked_potato: { name: 'Baked Potato', emoji: '🥔', basePrice: 40, description: 'A warm, fluffy baked potato. A comforting food item that sells well.' },
+        mashed_potato: { name: 'Mashed Potato', emoji: '🥔', basePrice: 30, description: 'Creamy mashed potatoes made from fresh potatoes. A popular side dish that commands a good price.' },
+        steak_n_potatos: { name: 'Steak n\' Potatoes', emoji: '🥩', basePrice: 160, description: 'A hearty meal of grilled steak served with a side of potatoes and french fries. A premium dish that sells for a high price!' },
+        carrot_juice: { name: 'Carrot Juice', emoji: '🥤', basePrice: 35, description: 'Healthy orange juice extracted from fresh carrots. Refreshing and nutritious!' },
+        cookie_dough: { name: 'Cookie Dough', emoji: '🍪', basePrice: 60, description: 'Sweet dough made with flour, sugar, and chocolate chips. Ready to be baked into delicious cookies.' },
+        chocolate_chip_cookie: { name: 'Chocolate Chip Cookie', emoji: '🍪', basePrice: 160, description: 'Crispy on the outside, chewy on the inside. Loaded with chocolate chips. A favorite treat that sells very well!' },
+        sugar_cookie: { name: 'Sugar Cookie', emoji: '🍪', basePrice: 120, description: 'Sweet and simple cookie made with sugar and butter. A classic treat that sells well.' },
+        plain_cookie: { name: 'Plain Cookie', emoji: '🍪', basePrice: 80, description: 'A basic cookie with a buttery flavor. A simple snack that sells decently.' },
+        tomato_sauce: { name: 'Tomato Sauce', emoji: '🍅', basePrice: 40, description: 'Rich, tangy sauce made from crushed tomatoes. Perfect for pizza and pasta.' },
+        pizza_dough: { name: 'Pizza Dough', emoji: '🍕', basePrice: 100, description: 'Special dough made with corn flour and tomato sauce. Ready to become a delicious pizza.' },
+        uncooked_pizza: { name: 'Uncooked Pizza', emoji: '🍕', basePrice: 85, description: 'A pizza assembled with dough, tomato sauce, and cheese. Needs to be baked in an oven.' },
+        pizza: { name: 'Pizza', emoji: '🍕', basePrice: 150, description: 'Hot, cheesy pizza fresh from the oven. A premium food item that commands a high price!' },
+        apple_pie: { name: 'Apple Pie', emoji: '🥧', basePrice: 140, description: 'Sweet dessert made with fresh apples and pastry. A classic treat that sells very well.' },
+        grape: { name: 'Grape', emoji: '🍇', basePrice: 20, description: 'Juicy purple grapes from the vine. Can be eaten fresh or processed into juice.' },
+        grape_juice: { name: 'Grape Juice', emoji: '🧃', basePrice: 55, description: 'Sweet purple juice squeezed from fresh grapes. A delightful beverage.' },
+        strawberry_jam: { name: 'Strawberry Jam', emoji: '🍓', basePrice: 65, description: 'Sweet preserve made from mashed strawberries and sugar. Spreads perfectly on bread!' },
+        pine_cone: { name: 'Pine Cone', emoji: '🌰', basePrice: 5, description: 'Woody seed cones from pine trees. Decorative and can be used for various crafts.' },
+        stone: { name: 'Stone', emoji: '🪨', basePrice: 1, description: 'A gray hard thing found in mines.' },
+        french_fries: { name: 'French Fries', emoji: '🍟', basePrice: 40, description: 'Crispy golden fries made from fresh potatoes. A popular snack that sells well.' },
+        raw_iron: { name: 'Raw Iron', emoji: '⚒️', basePrice: 50, description: 'A common gray hard valuable stone.' },
+        iron_ingot: { name: 'Iron Ingot', emoji: '🔨', basePrice: 130, description: 'Refined iron ready for crafting.' },
+        iron_bolt: { name: 'Iron Bolt', emoji: '🪛', basePrice: 90, description: 'A sturdy iron bolt used in various constructions.' },
+        iron_nail: { name: 'Iron Nail', emoji: '🔧', basePrice: 90, description: 'A small iron nail used for fastening materials together.' },
+        copper_ring: { name: 'Copper Ring', emoji: '💍', basePrice: 280, description: 'A simple yet elegant ring made of copper.' },
+        iron_ring: { name: 'Iron Ring', emoji: '💍', basePrice: 350, description: 'A sturdy ring forged from iron.' },
+        coal: { name: 'Coal', emoji: '⚫', basePrice: 15, description: 'A fuel prospected from stone. Used in a blacksmith.' },
+        raw_copper: { name: 'Raw Copper', emoji: '🟠', basePrice: 45, description: 'An orange hard valuable stone.' },
+        copper_ingot: { name: 'Copper Ingot', emoji: '🟧', basePrice: 110, description: 'Refined copper ready for crafting.' },
+        pumpkin_pie: { name: 'Pumpkin Pie', emoji: '🥧', basePrice: 100, description: 'Seasonal favorite made with roasted pumpkin. Perfect for autumn celebrations.' },
+        coffee_beans: { name: 'Coffee Beans', emoji: '☕', basePrice: 35, description: 'Roasted beans from coffee plants. Can be ground and brewed into energizing coffee.' },
+        coffee: { name: 'Coffee', emoji: '☕', basePrice: 80, description: 'A hot brewed beverage made from coffee beans. A popular drink to start the day!' },
+        sugar: { name: 'Sugar', emoji: '🧂', basePrice: 12, description: 'Sweet crystalline substance. Essential for making jams and desserts.' },
+        uu_matter: { name: 'UU-Matter', emoji: '🌀', basePrice: 1, description: 'A mysterious substance that can be used to create rare items.' },
+        diamond: { name: 'Diamond', emoji: '💎', basePrice: 5000, description: 'An extremely rare and valuable gem!' },
+        emerald: { name: 'Emerald', emoji: '💚', basePrice: 3000, description: 'A precious green gemstone prized for its beauty.' },
+        ruby: { name: 'Ruby', emoji: '❤️', basePrice: 4000, description: 'A stunning red gemstone known for its rarity and value.' },
+        sapphire: { name: 'Sapphire', emoji: '💙', basePrice: 3500, description: 'A beautiful blue gemstone cherished for its elegance.' },
+        amethyst: { name: 'Amethyst', emoji: '💜', basePrice: 2500, description: 'A captivating purple gemstone valued for its unique color.' },
+        topaz: { name: 'Topaz', emoji: '💛', basePrice: 2000, description: 'A radiant yellow gemstone admired for its brilliance.' },
+        cut_diamond: { name: 'Cut Diamond', emoji: '💎', basePrice: 6000, description: 'A finely cut diamond that sparkles brilliantly.' },
+        cut_emerald: { name: 'Cut Emerald', emoji: '💚', basePrice: 4000, description: 'A beautifully cut emerald showcasing its vibrant green color.' },
+        cut_ruby: { name: 'Cut Ruby', emoji: '❤️', basePrice: 5000, description: 'A skillfully cut ruby that enhances its deep red hue.' },
+        cut_sapphire: { name: 'Cut Sapphire', emoji: '💙', basePrice: 4500, description: 'A perfectly cut sapphire that highlights its deep blue color.' },
+        cut_amethyst: { name: 'Cut Amethyst', emoji: '💜', basePrice: 3000, description: 'A finely cut amethyst that showcases its rich purple color.' },
+        cut_topaz: { name: 'Cut Topaz', emoji: '💛', basePrice: 2500, description: 'A beautifully cut topaz that displays its bright yellow hue.' },
+        diamond_ring: { name: 'Diamond Ring', emoji: '💍', basePrice: 10000, description: 'An exquisite ring adorned with a sparkling diamond.' },
+        emerald_ring: { name: 'Emerald Ring', emoji: '💍', basePrice: 8000, description: 'A stunning ring featuring a vibrant emerald.' },
+        ruby_ring: { name: 'Ruby Ring', emoji: '💍', basePrice: 9000, description: 'A beautiful ring set with a deep red ruby.' },
+        sapphire_ring: { name: 'Sapphire Ring', emoji: '💍', basePrice: 8500, description: 'A magnificent ring featuring a deep blue sapphire.' },
+        amethyst_ring: { name: 'Amethyst Ring', emoji: '💍', basePrice: 7000, description: 'An elegant ring adorned with a rich purple amethyst.' },
+        topaz_ring: { name: 'Topaz Ring', emoji: '💍', basePrice: 6000, description: 'A radiant ring set with a bright yellow topaz.' }
+      },
+      machines: {
+        grindstone: {
+          name: 'Grindstone',
+          cost: 100,
+          emoji: '⚙️',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'A manual grinding mill powered by elbow grease. Click to process crops into flour.',
+          recipes: [
+            { input: [{type: 'wheat', count: 1}], output: [{type: 'wheat_flour', count: 1}], clicks: 2 },
+            { input: [{type: 'corn', count: 1}], output: [{type: 'corn_flour', count: 1}], clicks: 2 },
+            { input: [{type: 'coffee_plant', count: 1}], output: [{type: 'coffee_beans', count: 2}], clicks: 3 }
+          ]
+        },
+        curdling_vat: {
+          name: 'Curdling Vat',
+          cost: 500,
+          emoji: '🧀',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A large vat for turning milk into cheese. Requires time to properly curdle the milk.',
+          recipes: [
+            { input: [{type: 'milk', count: 2}], output: [{type: 'cheese', count: 1}], time: 60 }
+          ]
+        },
+        water_pump: {
+          name: 'Manual Water Pump',
+          cost: 50,
+          emoji: '💧',
+          inputSlots: 0,
+          outputSlots: 1,
+          description: 'A hand-operated pump that draws water from underground. Requires manual clicking to produce water.',
+          recipes: [
+            { input: [], output: [{type: 'water', count: 1}], clicks: 5 }
+          ]
+        },
+        mines_entrance: {
+          name: 'Mines Entrance',
+          cost: 500,
+          emoji: '⛏️',
+          inputSlots: 0,
+          outputSlots: 3,
+          description: 'An entrance to the caves. Requires manual clicking to produce stone with a chance of finding rare minerals.',
+          recipes: [
+            { 
+              input: [], 
+              output: [
+                {type: 'stone', count: 1, chance: 100},
+                {type: 'coal', count: 1, chance: 5},
+                {type: 'raw_copper', count: 1, chance: 1}
+              ], 
+              clicks: 20 
+            }
+          ]
+        },
+        drillmkone: {
+          name: 'Mining Drill MK1',
+          cost: 15000,
+          emoji: '⛏️',
+          inputSlots: 0,
+          outputSlots: 5,
+          description: 'A quicker automated source of stone. Continuously produces stone without manual intervention.',
+          recipes: [
+            { input: [], output: [{type: 'stone', count: 1}], time: 10 }
+          ],
+          autoProcess: true
+        },
+        drillmktwo: {
+          name: 'Mining Drill MK2',
+          cost: 50000,
+          emoji: '⛏️',
+          inputSlots: 0,
+          outputSlots: 9,
+          description: 'A much much faster automated source of stone. Continuously produces stone without manual intervention.',
+          recipes: [
+            { input: [], output: [{type: 'stone', count: 2}], time: 3 }
+          ],
+          autoProcess: true
+        },
+        auto_pump: {
+          name: 'Auto Water Pump',
+          cost: 200,
+          emoji: '🚰',
+          inputSlots: 0,
+          outputSlots: 1,
+          description: 'An automated water pump with a motorized system. Continuously produces water without manual intervention.',
+          recipes: [
+            { input: [], output: [{type: 'water', count: 1}], time: 5 }
+          ],
+          autoProcess: true
+        },
+        squeezer: {
+          name: 'Squeezer',
+          cost: 250,
+          emoji: '🧃',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A mechanical press that extracts juice from fruits. Takes time to process the items.',
+          recipes: [
+            { input: [{type: 'lemon', count: 2}, {type: 'sugar', count: 1}], output: [{type: 'lemonaid', count: 1}], time: 25 },
+            { input: [{type: 'baked_potato', count: 1}], output: [{type: 'mashed_potato', count: 2}], time: 25 }
+          ]
+        },
+        mixing_basin: {
+          name: 'Mixing Basin',
+          cost: 150,
+          emoji: '🥣',
+          inputSlots: 4,
+          outputSlots: 1,
+          description: 'A large bowl for combining ingredients. Mix flour and water to create various types of dough.',
+          recipes: [
+            { input: [{type: 'wheat_flour', count: 2}, {type: 'water', count: 1}], output: [{type: 'dough', count: 1}], time: 10 },
+            { input: [{type: 'corn_flour', count: 3}, {type: 'water', count: 1}], output: [{type: 'tortilla', count: 1}], time: 20 },
+            { input: [{type: 'corn_flour', count: 2}, {type: 'water', count: 1}, {type: 'tomato_sauce', count: 1}], output: [{type: 'pizza_dough', count: 1}], time: 15 },
+            { input: [{type: 'ice_cream_mix', count: 2}, {type: 'vanilla_plant', count: 1}], output: [{type: 'vanilla_ice_cream', count: 1}], time: 25 },
+            { input: [{type: 'ice_cream_mix', count: 2}, {type: 'cocoa_plant', count: 1}], output: [{type: 'chocolate_ice_cream', count: 1}], time: 25 },
+            { input: [{type: 'milk', count: 1}, {type: 'sugar', count: 1}], output: [{type: 'ice_cream_mix', count: 1}], time: 30 },
+            { input: [{type: 'cocoa_plant', count: 2}, {type: 'sugar', count: 1}], output: [{type: 'chocolate_bar', count: 1}], time: 40 },
+            { input: [{type: 'wheat_flour', count: 2}, {type: 'sugar', count: 1}], output: [{type: 'cookie_dough', count: 1}], time: 35 }
+          ]
+        },
+        barn: {
+          name: 'Barn',
+          cost: 800,
+          emoji: '🐄',
+          inputSlots: 2,
+          outputSlots: 3,
+          description: 'A shelter for farm animals. Feeds hay bales to cows to increase their population, can also produce milk.',
+          recipes: [
+            { input: [{type: 'hay_bale', count: 1}, {type: 'cow', count: 2}], output: [{type: 'cow', count: 3}], time: 30 },
+            { input: [{type: 'cow', count: 1}], output: [{type: 'milk', count: 1}], time: 120 },
+            { input: [{type: 'wheat', count: 10}], output: [{type: 'hay_bale', count: 1}], time: 5 }
+          ]
+        },
+        animal_finder: {
+          name: 'Animal Finder',
+          cost: 300,
+          emoji: '🎯',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'A device that helps locate nearby animals. Takes time to find and capture animals for your farm. Use Hay Bales to attract them.',
+          recipes: [
+            { input: [{type: 'hay_bale', count: 1}], output: [{type: 'cow', count: 1, chance: 0.2}], time: 120 }
+          ],
+          autoProcess: true
+        },
+        smoker: {
+          name: 'Smoker',
+          cost: 400,
+          emoji: '🔥',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A wood-powered smoker that slowly cooks meat items. Produces unique smoked products that sell for higher prices.',
+          recipes: [
+            { input: [{type: 'raw_beef', count: 1}, {type: 'wood', count: 1}], output: [{type: 'smoked_beef', count: 1}], time: 30 }
+          ]
+        },
+        slaughterhouse: {
+          name: 'Slaughterhouse',
+          cost: 600,
+          emoji: '🔪',
+          inputSlots: 1,
+          outputSlots: 2,
+          description: 'A facility for processing livestock into meat products. Converts cows into raw beef efficiently.',
+          recipes: [
+            { input: [{type: 'cow', count: 1}], output: [{type: 'raw_beef', count: 2}, {type: 'bone', count: 1}], time: 45 }
+          ]
+        },
+        coffee_machine: {
+          name: 'Coffee Machine',
+          cost: 1000,
+          emoji: '☕',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A machine that brews coffee from coffee beans and water. Produces a refreshing beverage that sells well.',
+          recipes: [
+            { input: [{type: 'coffee_beans', count: 2}, {type: 'water', count: 1}], output: [{type: 'coffee', count: 1}], time: 20 }
+          ]
+        },
+        prep_counter: {
+          name: 'Prep Counter',
+          cost: 120,
+          emoji: '🧂',
+          inputSlots: 5,
+          outputSlots: 1,
+          description: 'A food preparation station. Combines ingredients into prepared meals.',
+          recipes: [
+            { input: [{type: 'tortilla', count: 1}, {type: 'tomato', count: 1}, {type: 'smoked_beef', count: 1}], output: [{type: 'taco', count: 1}], time: 60 },
+            { input: [{type: 'dough', count: 1}, {type: 'tomato_sauce', count: 1}, {type: 'cheese', count: 1}], output: [{type: 'uncooked_pizza', count: 1}], time: 45 },
+            { input: [{type: 'apple', count: 3}, {type: 'dough', count: 1}], output: [{type: 'unbaked_apple_pie', count: 1}], time: 50 },
+            { input: [{type: 'pumpkin', count: 2}, {type: 'dough', count: 1}], output: [{type: 'unbaked_pumpkin_pie', count: 1}], time: 55 },
+            { input: [{type: 'rich_orange_juice', count: 1}, {type: 'lemonaid', count: 1}, {type: 'grape_juice', count: 1}], output: [{type: 'fruit_punch', count: 1}], time: 30 }
+          ]
+        },
+        oven: {
+          name: 'Baking Oven',
+          cost: 250,
+          emoji: '🔥',
+          inputSlots: 3,
+          outputSlots: 1,
+          description: 'A charcoal-powered oven that bakes goods at high temperature. Creates valuable baked products.',
+          recipes: [
+            { input: [{type: 'dough', count: 1}, {type: 'charcoal', count: 1}], output: [{type: 'bread', count: 2}], time: 15 },
+            { input: [{type: 'uncooked_pizza', count: 1}, {type: 'charcoal', count: 1}], output: [{type: 'pizza', count: 1}], time: 20 },
+            { input: [{type: 'unbaked_apple_pie', count: 1}, {type: 'charcoal', count: 1}], output: [{type: 'apple_pie', count: 1}], time: 25 },
+            { input: [{type: 'unbaked_pumpkin_pie', count: 1}, {type: 'charcoal', count: 1}], output: [{type: 'pumpkin_pie', count: 1}], time: 30 },
+            { input: [{type: 'cookie_dough', count: 1}, {type: 'chocolate_bar', count: 1}, {type: 'charcoal', count: 1}], output: [{type: 'chocolate_chip_cookie', count: 1}], time: 15 },
+            { input: [{type: 'cookie_dough', count: 1}, {type: 'sugar', count: 3}, {type: 'charcoal', count: 1}], output: [{type: 'sugar_cookie', count: 1}], time: 15 },
+            { input: [{type: 'cookie_dough', count: 1}, {type: 'charcoal', count: 1}], output: [{type: 'plain_cookie', count: 1}], time: 15 },
+            { input: [{type: 'potato', count: 2}, {type: 'charcoal', count: 1}], output: [{type: 'baked_potato', count: 2}], time: 10 }
+          ]
+        },
+        crate: {
+          name: 'Crate',
+          cost: 75,
+          emoji: '📦',
+          inputSlots: 3,
+          outputSlots: 9,
+          description: 'A storage container with input and output sections. Items placed in input slots instantly transfer to output for organized storage.',
+          recipes: [],
+          instantTransfer: true
+        },
+        deep_fryer: {
+          name: 'Deep Fryer',
+          cost: 300,
+          emoji: '🍟',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A hot oil fryer that crisps up potato slices into golden french fries. Produces a popular snack item.',
+          recipes: [
+            { input: [{type: 'potato', count: 1}], output: [{type: 'french_fries', count: 1}], time: 20 }
+          ]
+        },
+        precision_cutter: {
+          name: 'Precision Cutter',
+          cost: 40000,
+          emoji: '💎',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'A high-tech cutting machine for transforming raw gems into cut gemstones. Increases the value of rare stones significantly.',
+          recipes: [
+            { input: [{type: 'diamond', count: 1}], output: [{type: 'cut_diamond', count: 1}], time: 45 },
+            { input: [{type: 'emerald', count: 1}], output: [{type: 'cut_emerald', count: 1}], time: 40 },
+            { input: [{type: 'ruby', count: 1}], output: [{type: 'cut_ruby', count: 1}], time: 42 },
+            { input: [{type: 'sapphire', count: 1}], output: [{type: 'cut_sapphire', count: 1}], time: 38 },
+            { input: [{type: 'amethyst', count: 1}], output: [{type: 'cut_amethyst', count: 1}], time: 35 },
+            { input: [{type: 'topaz', count: 1}], output: [{type: 'cut_topaz', count: 1}], time: 30 }
+          ]
+        },
+        jewelry_workshop: {
+          name: 'Jewelry Workshop',
+          cost: 60000,
+          emoji: '💍',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A specialized workshop for crafting exquisite jewelry pieces from cut gemstones. Produces high-value rings.',
+          recipes: [
+            { input: [{type: 'cut_diamond', count: 1}, {type: 'iron_ring', count: 1}], output: [{type: 'diamond_ring', count: 1}], time: 60 },
+            { input: [{type: 'cut_emerald', count: 1}, {type: 'iron_ring', count: 1}], output: [{type: 'emerald_ring', count: 1}], time: 50 },
+            { input: [{type: 'cut_ruby', count: 1}, {type: 'iron_ring', count: 1}], output: [{type: 'ruby_ring', count: 1}], time: 55 },
+            { input: [{type: 'cut_sapphire', count: 1}, {type: 'copper_ring', count: 1}], output: [{type: 'sapphire_ring', count: 1}], time: 52 },
+            { input: [{type: 'cut_amethyst', count: 1}, {type:'copper_ring', count :1}], output:[{ type:'amethyst_ring' ,count :1 }], time :48 },
+            { input:[{ type:'cut_topaz' ,count :1 }, { type:'copper_ring' ,count :1 }], output:[{ type:'topaz_ring' ,count :1 }], time :45 }
+          ]
+        },
+        charcoal_pit: {
+          name: 'Charcoal Pit',
+          cost: 100,
+          emoji: '🔥',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'A controlled burning pit that converts wood into charcoal fuel. Essential for powering ovens.',
+          recipes: [
+            { input: [{type: 'wood', count: 3}], output: [{type: 'charcoal', count: 2}], time: 20 }
+          ]
+        },
+        coal_prospector: {
+          name: 'Coal Prospector',
+          cost: 1000,
+          emoji: '🔨',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'Prospects stone into coal with varying success rates.',
+          recipes: [
+            { 
+              input: [{type: 'stone', count: 7}], 
+              output: [
+                {type: 'coal', count: 1, chance: 70},
+                {type: 'stone', count: 3, chance: 30}
+              ], 
+              time: 60 
+            }
+          ]
+        },
+        copper_prospector: {
+          name: 'Copper Prospector',
+          cost: 7500,
+          emoji: '🔨',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'Prospects stone into raw copper with a chance to find extra materials.',
+          recipes: [
+            { 
+              input: [{type: 'stone', count: 13}],
+              output: [
+                {type: 'raw_copper', count: 1, chance: 60},
+                {type: 'stone', count: 5, chance: 40}
+              ], 
+              time: 120 
+            }
+          ]
+        },
+        gem_prospector: {
+          name: 'Gem Prospector',
+          cost: 20000,
+          emoji: '🔨',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'Prospects stone into rare gems with varying success rates.',
+          recipes: [
+            { 
+              input: [{type: 'stone', count: 16}], 
+              output: [
+                {type: 'diamond', count: 1, chance: 5},
+                {type: 'emerald', count: 1, chance: 7},
+                {type: 'ruby', count: 1, chance: 6},
+                {type: 'sapphire', count: 1, chance: 8},
+                {type: 'amethyst', count: 1, chance: 10},
+                {type: 'topaz', count: 1, chance: 12},
+                {type: 'stone', count: 4, chance: 52}
+              ], 
+              time: 300 
+            }
+          ]
+        },
+        smelter: {
+          name: 'Smelter',
+          cost: 3000,
+          emoji: '🔥',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'Refines raw ores into usable ingots using coal as fuel.',
+          recipes: [
+            { 
+              input: [{type: 'raw_copper', count: 2}, {type: 'coal', count: 1}],
+              output: [{type: 'copper_ingot', count: 1}], 
+              time: 30 
+            }
+          ]
+        },
+        juicer: {
+          name: 'Juicer',
+          cost: 180,
+          emoji: '🧃',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'A mechanical press that extracts juice from vegetables and fruits. Creates healthy beverages and sauces.',
+          recipes: [
+            { input: [{type: 'carrot', count: 3}], output: [{type: 'carrot_juice', count: 1}], time: 12 },
+            { input: [{type: 'tomato', count: 2}], output: [{type: 'tomato_sauce', count: 1}], time: 10 },
+            { input: [{type: 'grape', count: 4}], output: [{type: 'grape_juice', count: 1}], time: 14 },
+            { input: [{type: 'orange', count: 2}], output: [{type: 'rich_orange_juice', count: 1}], time: 20 },
+          ]
+        },
+        market_stall: {
+          name: 'Market Stall',
+          cost: 300,
+          emoji: '🪙',
+          inputSlots: 6,
+          outputSlots: 0,
+          description: 'An automated selling station. Any items placed inside are automatically sold for their market value.',
+          recipes: [],
+          isMarket: true
+        },
+        preservation_pot: {
+          name: 'Preservation Pot',
+          cost: 220,
+          emoji: '🍯',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A cooking pot for making jams and preserves. Requires sugar and fruit to create sweet spreads.',
+          recipes: [
+            { input: [{type: 'strawberry', count: 3}, {type: 'sugar', count: 1}], output: [{type: 'strawberry_jam', count: 1}], time: 16 }
+          ]
+        },
+        alchohol_still: {
+          name: 'Alcohol Still',
+          cost: 400,
+          emoji: '🍺',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A distillation apparatus for producing pure alcohol from hops. Essential for brewing beer and other beverages.',
+          recipes: [
+            { input: [{type: 'hops', count: 4}], output: [{type: 'pure_alchohol', count: 1}], time: 40 }
+          ]
+        },
+        brewery: {
+          name: 'Brewery',
+          cost: 600,
+          emoji: '🍺',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A facility for brewing beer from pure alcohol. Produces refreshing beverages that sell well.',
+          recipes: [
+            { input: [{type: 'pure_alchohol', count: 1}, {type: 'water', count: 2}], output: [{type: 'beer', count: 1}], time: 50 }
+          ]
+        },
+        sugar_refinery: {
+          name: 'Sugar Refinery',
+          cost: 150,
+          emoji: '🧂',
+          inputSlots: 1,
+          outputSlots: 1,
+          description: 'A simple refinery that extracts sugar from certain crops. Useful for making preserves.',
+          recipes: [
+            { input: [{type: 'corn', count: 4}], output: [{type: 'sugar', count: 2}], time: 18 }
+          ]
+        },
+        blacksmith: {
+          name: 'Blacksmith',
+          cost: 2000,
+          emoji: '⚒️',
+          inputSlots: 3,
+          outputSlots: 1,
+          description: 'A forge for crafting metal items from ingots. Produces various tools and components. Used coal as fuel.',
+          recipes: [
+            { input: [{type: 'iron_ingot', count: 1}, {type: 'coal', count: 1}], output: [{type: 'iron_bolt', count: 2}], time: 10 },
+            { input: [{type: 'iron_ingot', count: 1}, {type: 'coal', count: 1}], output: [{type: 'iron_nail', count: 2}], time: 10 },
+            { input: [{type: 'copper_ingot', count: 2}, {type: 'coal', count: 1}], output: [{type: 'copper_ring', count: 1}], time: 30 },
+            { input: [{type: 'iron_ingot', count: 2}, {type: 'coal', count: 1}], output: [{type: 'iron_ring', count: 1}], time: 35 }
+          ]
+        },
+        composter: {
+          name: 'Composter',
+          cost: 80,
+          emoji: '♻️',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'Turns leaves and other byproducts into seeds. A sustainable way to recycle leaves and scraps.',
+          recipes: [
+            { input: [{type: 'leaves', count: 6}], output: [{type: 'oak_tree_seed', count: 1}], time: 25 },
+            { input: [{type: 'pine_cone', count: 2}], output: [{type: 'pine_tree_seed', count: 1}], time: 25 }
+          ]
+        },
+        uu_matter_converter: {
+          name: 'UU-Matter Converter',
+          cost: 100000,
+          emoji: '♻️',
+          inputSlots: 2,
+          outputSlots: 1,
+          description: 'A highly advanced machine that converts UU-Matter into valuable items, put UU-Matter in one slot and an uncut gem or ring in the other.',
+          recipes: [
+            { input: [{type: 'uu_matter', count: 1}, {type: 'diamond', count: 1}], output: [{type: 'diamond', count: 2}], time: 300 },
+            { input: [{type: 'uu_matter', count: 1}, {type: 'emerald', count: 1}], output: [{type: 'emerald', count: 2}], time: 300 },
+            { input: [{type: 'uu_matter', count: 1}, {type: 'ruby', count: 1}], output: [{type: 'ruby', count: 2}], time: 300 },
+            { input: [{type: 'uu_matter', count: 1}, {type: 'sapphire', count: 1}], output: [{type: 'sapphire', count: 2}], time: 300 },
+            { input: [{type: 'uu_matter', count: 1}, {type: 'amethyst', count: 1}], output: [{type: 'amethyst', count: 2}], time: 300 },
+            { input: [{type: 'uu_matter', count: 1}, {type: 'topaz', count: 1}], output: [{type: 'topaz', count: 2}], time: 300 },
+            { input: [{type: 'uu_matter', count: 2}, {type: 'diamond_ring', count: 1}], output: [{type: 'diamond_ring', count: 2}], time: 600 },
+            { input: [{type: 'uu_matter', count: 2}, {type: 'emerald_ring', count: 1}], output: [{type: 'emerald_ring', count: 2}], time: 600 },
+            { input: [{type: 'uu_matter', count: 2}, {type: 'ruby_ring', count: 1}], output: [{type: 'ruby_ring', count: 2}], time: 600 },
+            { input: [{type: 'uu_matter', count: 2}, {type: 'sapphire_ring', count: 1}], output: [{type: 'sapphire_ring', count: 2}], time: 600 },
+            { input: [{type: 'uu_matter', count: 2}, {type: 'amethyst_ring', count: 1}], output: [{type: 'amethyst_ring', count: 2}], time: 600 },
+            { input: [{type: 'uu_matter', count: 2}, {type: 'topaz_ring', count: 1}], output: [{type: 'topaz_ring', count: 2}], time: 600 }
+          ]
+        },
+        uu_matter_generator: {
+          name: 'UU-Matter Generator',
+          cost: 5000000,
+          emoji: '🌀',
+          inputSlots: 0,
+          outputSlots: 1,
+          description: 'A futuristic device that generates UU-Matter over time. Takes 20 minutes to produce 1 UU-Matter.',
+          recipes: [
+            { input: [], output: [{type: 'uu_matter', count: 1}], time: 1200 }
+          ],
+          autoProcess: true
+        }
+      },
+      customers: {
+        // Patience is in seconds, different people like different items. You can negotiate with them to raise the reward, the longer you take the less likely they are going to accept your offer, if the offer raises the reward too much they are less likely to accept it, the more offers you make the more likely they are to accept it.
+        kelsey: { name: 'Kelsey', patience: 240, emoji: '🧑‍🌾', quests: [
+          {items: [{type: 'taco', count: 2}], baseReward: 150, maxNegotiation: 170, minNegotiation: 70, offerChance: 0.6},
+          {items: [{type: 'apple_pie', count: 1}], baseReward: 140, maxNegotiation: 160, minNegotiation: 60, offerChance: 0.3},
+          {items: [{type: 'bread', count: 3}], baseReward: 120, maxNegotiation: 140, minNegotiation: 50, offerChance: 0.7},
+          {items: [{type: 'milk', count: 5}], baseReward: 80, maxNegotiation: 100, minNegotiation: 30, offerChance: 0.5}
+        ]},
+        jamie: { name: 'Jamie', patience: 300, emoji: '👩‍🍳', quests: [
+          {items: [{type: 'pizza', count: 1}], baseReward: 150, maxNegotiation: 180, minNegotiation: 80, offerChance: 0.4},
+          {items: [{type: 'beer', count: 3}], baseReward: 200, maxNegotiation: 230, minNegotiation: 100, offerChance: 0.2},
+          {items: [{type: 'grape_juice', count: 4}], baseReward: 100, maxNegotiation: 130, minNegotiation: 50, offerChance: 0.6},
+          {items: [{type: 'chocolate_ice_cream', count: 2}], baseReward: 180, maxNegotiation: 210, minNegotiation: 90, offerChance: 0.3}
+        ]},
+        alex: { name: 'Alex', patience: 180, emoji: '🧑‍🔧', quests: [
+          {items: [{type: 'copper_ingot', count: 5}], baseReward: 300, maxNegotiation: 350, minNegotiation: 150, offerChance: 0.5},
+          {items: [{type: 'stone', count: 20}], baseReward: 100, maxNegotiation: 130, minNegotiation: 50, offerChance: 0.7},
+          {items: [{type: 'coal', count: 10}], baseReward: 150, maxNegotiation: 180, minNegotiation: 70, offerChance: 0.6},
+          {items: [{type: 'raw_copper', count: 8}], baseReward: 200, maxNegotiation: 240, minNegotiation: 90, offerChance: 0.4}
+        ]}
+      }
+    };
+
+    // ===== GAME STATE =====
+    let gameState = {
+      money: 0,
+      time: 0,
+      inventory: {},
+      plots: Array(6).fill(null).map(() => ({ type: 'plot', plant: null, progress: 0, machine: null })),
+      machines: [],
+      employees: [],
+      draggedItem: null,
+      placingMachine: null,
+      openMachineIndex: null,
+      upgrades: {
+        plotsPurchased: 0,
+        employeeSpeed: 0
+      },
+      codex: {
+        plantsDiscovered: new Set(),
+        itemsDiscovered: new Set(),
+        machinesDiscovered: new Set(),
+        recipesDiscovered: new Set()
+      }
+    };
+
+    // ===== HELPER FUNCTIONS =====
+    function addToInventory(type, count = 1) {
+      gameState.inventory[type] = (gameState.inventory[type] || 0) + count;
+      
+      // Discover items for codex
+      if (CONFIG.items[type]) {
+        gameState.codex.itemsDiscovered.add(type);
+      } else if (CONFIG.plants[type]) {
+        gameState.codex.plantsDiscovered.add(type);
+      }
+      
+      updateInventory();
+    }
+
+    function removeFromInventory(type, count = 1) {
+      if ((gameState.inventory[type] || 0) >= count) {
+        gameState.inventory[type] -= count;
+        if (gameState.inventory[type] <= 0) delete gameState.inventory[type];
+        updateInventory();
+        return true;
+      }
+      return false;
+    }
+
+    function getItemInfo(type) {
+      if (type.endsWith('_seed')) {
+        const plantType = type.replace('_seed', '');
+        const plant = CONFIG.plants[plantType];
+        if (plant) {
+          return { name: plant.name + ' Seed', emoji: '🌱', basePrice: plant.seedPrice };
+        }
+      }
+      return CONFIG.plants[type] || CONFIG.items[type] || { name: type, emoji: '❓', basePrice: 0 };
+    }
+
+    function getDisplayName(type) {
+      // Check if item/plant is discovered
+      if (type.endsWith('_seed')) {
+        const plantType = type.replace('_seed', '');
+        if (!gameState.codex.plantsDiscovered.has(plantType)) {
+          return '[Locked]';
+        }
+      } else if (CONFIG.plants[type]) {
+        if (!gameState.codex.plantsDiscovered.has(type)) {
+          return '[Locked]';
+        }
+      } else if (CONFIG.items[type]) {
+        if (!gameState.codex.itemsDiscovered.has(type)) {
+          return '[Locked]';
+        }
+      }
+      
+      const info = getItemInfo(type);
+      return info.name;
+    }
+
+    function updateInventory() {
+      const inv = document.getElementById('inventory');
+      inv.innerHTML = '';
+      Object.entries(gameState.inventory).forEach(([type, count]) => {
+        const info = getItemInfo(type);
+        const displayName = getDisplayName(type);
+        const div = document.createElement('div');
+        div.className = 'inventory-item';
+        div.draggable = true;
+        div.innerHTML = `<span>${info.emoji} ${displayName}</span><span>${count}</span>`;
+        div.addEventListener('dragstart', (e) => {
+          gameState.draggedItem = { type, from: 'inventory' };
+        });
+        inv.appendChild(div);
+      });
+    }
+
+    function updateMoney() {
+      document.getElementById('money').textContent = Math.floor(gameState.money);
+    }
+
+    function getMachineById(id) {
+      return gameState.machines.find(m => m.id === parseInt(id));
+    }
+
+    function getItemsFromCrate(crateId) {
+      const crate = getMachineById(crateId);
+      if (!crate) return {};
+      const items = {};
+      crate.outputSlots.forEach(slot => {
+        if (slot) {
+          items[slot.type] = (items[slot.type] || 0) + slot.count;
+        }
+      });
+      return items;
+    }
+
+    function removeItemFromCrate(crateId, itemType, count) {
+      const crate = getMachineById(crateId);
+      if (!crate) return false;
+      
+      let remaining = count;
+      for (let i = 0; i < crate.outputSlots.length; i++) {
+        const slot = crate.outputSlots[i];
+        if (slot && slot.type === itemType) {
+          const takeAmount = Math.min(slot.count, remaining);
+          slot.count -= takeAmount;
+          remaining -= takeAmount;
+          if (slot.count <= 0) {
+            crate.outputSlots[i] = null;
+          }
+          if (remaining <= 0) return true;
+        }
+      }
+      return remaining === 0;
+    }
+
+    function addItemToCrate(crateId, itemType, count) {
+      const crate = getMachineById(crateId);
+      if (!crate) return false;
+      
+      // Try to stack first in output slots
+      for (let i = 0; i < crate.outputSlots.length; i++) {
+        const slot = crate.outputSlots[i];
+        if (slot && slot.type === itemType) {
+          slot.count += count;
+          return true;
+        }
+      }
+      
+      // Find empty slot in output slots
+      for (let i = 0; i < crate.outputSlots.length; i++) {
+        if (!crate.outputSlots[i]) {
+          crate.outputSlots[i] = { type: itemType, count };
+          return true;
+        }
+      }
+      
+      return false;
+    }
+
+    // Process recipe outputs with chance system
+    function processRecipeOutputs(recipe, outputSlots) {
+      recipe.output.forEach(out => {
+        // Check if this output has a chance property
+        const shouldProduce = !out.chance || (Math.random() * 100 < out.chance);
+        
+        if (shouldProduce) {
+          let added = false;
+          // Try to stack with existing items
+          for (let i = 0; i < outputSlots.length; i++) {
+            if (outputSlots[i] && outputSlots[i].type === out.type) {
+              outputSlots[i].count += out.count;
+              added = true;
+              break;
+            }
+          }
+          
+          // Find empty slot if not stacked
+          if (!added) {
+            const emptySlot = outputSlots.findIndex(s => !s);
+            if (emptySlot >= 0) {
+              outputSlots[emptySlot] = { type: out.type, count: out.count };
+            }
+          }
+        }
+      });
+    }
+
+    // ===== FARM TAB =====
+    function initFarm() {
+      const farmTab = document.getElementById('farm-tab');
+      farmTab.innerHTML = '<h2>Farm</h2><p>Click empty plot to plant (requires seeds) • Click machine to open</p><div class="farm-grid" id="farm-grid-container"></div>';
+      
+      const grid = document.getElementById('farm-grid-container');
+      
+      gameState.plots.forEach((plot, idx) => {
+        const plotDiv = document.createElement('div');
+        plotDiv.className = 'plant-plot';
+        plotDiv.dataset.plotIndex = idx;
+        
+        if (plot.machine) {
+          plotDiv.classList.add('machine');
+          const machine = gameState.machines.find(m => m.plotIndex === idx);
+          if (machine) {
+            const machineEmoji = document.createElement('div');
+            machineEmoji.className = 'machine-emoji';
+            machineEmoji.textContent = machine.config.emoji;
+            plotDiv.appendChild(machineEmoji);
+            
+            const machineId = document.createElement('div');
+            machineId.className = 'machine-id';
+            machineId.textContent = `#${machine.id}`;
+            plotDiv.appendChild(machineId);
+            
+            plotDiv.onclick = () => openMachine(gameState.machines.indexOf(machine));
+          }
+        } else if (plot.plant) {
+          const progress = document.createElement('div');
+          progress.className = 'plant-progress';
+          progress.innerHTML = `<div class="plant-progress-bar" style="width: ${plot.progress}%"></div>`;
+          plotDiv.appendChild(progress);
+          
+          const plantEmoji = document.createElement('div');
+          plantEmoji.className = 'plant-growing';
+          plantEmoji.textContent = CONFIG.plants[plot.plant].emoji;
+          plotDiv.appendChild(plantEmoji);
+          
+          plotDiv.onclick = () => {
+            if (plot.progress >= 100) harvestPlot(idx);
+          };
+        } else {
+          if (gameState.placingMachine) {
+            plotDiv.classList.add('placing-machine');
+            plotDiv.onclick = () => placeMachineOnPlot(idx);
+          } else {
+            plotDiv.onclick = () => showPlantSelector(idx);
+          }
+        }
+        
+        grid.appendChild(plotDiv);
+      });
+      
+      // Render employees
+      renderEmployees();
+    }
+
+    function renderEmployees() {
+      const grid = document.getElementById('farm-grid-container');
+      if (!grid) return;
+      
+      // Remove old markers
+      document.querySelectorAll('.employee-marker').forEach(el => el.remove());
+      
+      gameState.employees.forEach((emp, idx) => {
+        const marker = document.createElement('div');
+        marker.className = 'employee-marker';
+        marker.textContent = (idx + 1);
+        marker.title = emp.name;
+        
+        // Position based on current location
+        const pos = getEmployeePosition(emp);
+        marker.style.left = pos.x + 'px';
+        marker.style.top = pos.y + 'px';
+        
+        grid.appendChild(marker);
+      });
+    }
+
+    function getEmployeePosition(emp) {
+      if (!emp.currentPlot && emp.currentPlot !== 0) {
+        return { x: 0, y: 0 };
+      }
+      
+      const plotEl = document.querySelector(`[data-plot-index="${emp.currentPlot}"]`);
+      if (plotEl) {
+        const rect = plotEl.getBoundingClientRect();
+        const gridRect = document.getElementById('farm-grid-container').getBoundingClientRect();
+        return {
+          x: rect.left - gridRect.left + 30,
+          y: rect.top - gridRect.top + 30
+        };
+      }
+      return { x: 0, y: 0 };
+    }
+
+    function showPlantSelector(plotIdx) {
+      const modalBody = document.getElementById('modal-body');
+      modalBody.innerHTML = '<h2>Select Plant to Grow</h2><p>Requires seeds!</p>';
+      
+      Object.entries(CONFIG.plants).forEach(([key, plant]) => {
+        const seedType = key + '_seed';
+        const hasSeeds = (gameState.inventory[seedType] || 0) > 0;
+        const displayName = getDisplayName(key);
+        
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.style.display = 'block';
+        btn.style.margin = '10px 0';
+        btn.style.width = '100%';
+        btn.textContent = `${plant.emoji} ${displayName} (${plant.growTime}s) - ${hasSeeds ? '✓ Has Seeds' : '✗ No Seeds'}`;
+        btn.disabled = !hasSeeds;
+        btn.onclick = () => {
+          if (removeFromInventory(seedType, 1)) {
+            gameState.plots[plotIdx] = { type: 'plot', plant: key, progress: 0, machine: null };
+            closeModal();
+            initFarm();
+          }
+        };
+        modalBody.appendChild(btn);
+      });
+      
+      document.getElementById('modal').classList.add('active');
+    }
+
+    function harvestPlot(idx) {
+      const plot = gameState.plots[idx];
+      if (plot.plant && plot.progress >= 100) {
+        const plantConfig = CONFIG.plants[plot.plant];
+        
+        // Discover the plant for codex
+        gameState.codex.plantsDiscovered.add(plot.plant);
+        
+        if (plantConfig.isTree && plantConfig.yields) {
+          plantConfig.yields.forEach(item => {
+            addToInventory(item, 1);
+          });
+        } else {
+          addToInventory(plot.plant, 1);
+        }
+        
+        gameState.plots[idx] = { type: 'plot', plant: null, progress: 0, machine: null };
+        initFarm();
+      }
+    }
+
+    function placeMachineOnPlot(plotIdx) {
+      const plot = gameState.plots[plotIdx];
+      if (plot.plant || plot.machine) return;
+      
+      const machineData = gameState.placingMachine;
+      plot.machine = machineData.type;
+      
+      // Discover machine for codex
+      gameState.codex.machinesDiscovered.add(machineData.type);
+      
+      const newMachine = {
+        id: gameState.machines.length + 1,
+        type: machineData.type,
+        config: machineData.config,
+        plotIndex: plotIdx,
+        inputSlots: Array(machineData.config.inputSlots).fill(null),
+        outputSlots: Array(machineData.config.outputSlots).fill(null),
+        progress: 0,
+        clicks: 0,
+        processing: false
+      };
+      
+      gameState.machines.push(newMachine);
+      
+      gameState.placingMachine = null;
+      initFarm();
+      initMachines();
+    }
+
+    // ===== MARKET TAB =====
+    function initMarket() {
+      const marketTab = document.getElementById('market-tab');
+      marketTab.innerHTML = '<h2>Market</h2><h3>Sell Items</h3><div id="sell-section"></div><h3>Buy Seeds</h3><div id="buy-section"></div>';
+      
+      const sellSection = document.getElementById('sell-section');
+      Object.entries(gameState.inventory).forEach(([type, count]) => {
+        if (type.endsWith('_seed')) return;
+        
+        const info = getItemInfo(type);
+        const displayName = getDisplayName(type);
+        const price = info.basePrice;
+        
+        const div = document.createElement('div');
+        div.className = 'market-item';
+        div.innerHTML = `
+          <span>${info.emoji} ${displayName} (${count})</span>
+          <span>${price.toFixed(2)} each</span>
+        `;
+        
+        const sellBtn = document.createElement('button');
+        sellBtn.className = 'btn';
+        sellBtn.textContent = 'Sell 1';
+        sellBtn.onclick = () => {
+          if (removeFromInventory(type, 1)) {
+            gameState.money += price;
+            updateMoney();
+            initMarket();
+          }
+        };
+        div.appendChild(sellBtn);
+        
+        const sellAllBtn = document.createElement('button');
+        sellAllBtn.className = 'btn';
+        sellAllBtn.style.marginLeft = '5px';
+        sellAllBtn.textContent = 'Sell All';
+        sellAllBtn.onclick = () => {
+          const amount = gameState.inventory[type] || 0;
+          if (removeFromInventory(type, amount)) {
+            gameState.money += price * amount;
+            updateMoney();
+            initMarket();
+          }
+        };
+        div.appendChild(sellAllBtn);
+        
+        sellSection.appendChild(div);
+      });
+      
+      const buySection = document.getElementById('buy-section');
+      Object.entries(CONFIG.plants).forEach(([key, plant]) => {
+        const seedType = key + '_seed';
+        const displayName = getDisplayName(key);
+        const price = plant.seedPrice;
+        
+        const div = document.createElement('div');
+        div.className = 'market-item';
+        div.innerHTML = `
+          <span>🌱 ${displayName} Seed</span>
+          <span>${price.toFixed(2)}</span>
+        `;
+        
+        const buyBtn = document.createElement('button');
+        buyBtn.className = 'btn';
+        buyBtn.textContent = 'Buy 1';
+        buyBtn.disabled = gameState.money < price;
+        buyBtn.onclick = () => {
+          if (gameState.money >= price) {
+            gameState.money -= price;
+            addToInventory(seedType, 1);
+            updateMoney();
+            initMarket();
+          }
+        };
+        div.appendChild(buyBtn);
+        
+        const buy10Btn = document.createElement('button');
+        buy10Btn.className = 'btn';
+        buy10Btn.style.marginLeft = '5px';
+        buy10Btn.textContent = 'Buy 10';
+        buy10Btn.disabled = gameState.money < price * 10;
+        buy10Btn.onclick = () => {
+          if (gameState.money >= price * 10) {
+            gameState.money -= price * 10;
+            addToInventory(seedType, 10);
+            updateMoney();
+            initMarket();
+          }
+        };
+        div.appendChild(buy10Btn);
+        
+        buySection.appendChild(div);
+      });
+    }
+
+    // ===== MACHINES TAB =====
+    function initMachines() {
+      const machinesTab = document.getElementById('machines-tab');
+      machinesTab.innerHTML = '<h2>Machines</h2><h3>Your Machines</h3><div id="owned-machines"></div><h3>Buy Machines</h3><div id="machine-shop"></div>';
+      
+      const ownedDiv = document.getElementById('owned-machines');
+      if (gameState.machines.length === 0) {
+        ownedDiv.innerHTML = '<p>No machines yet. Buy one below!</p>';
+      } else {
+        gameState.machines.forEach((machine, idx) => {
+          const machineDiv = document.createElement('div');
+          machineDiv.className = 'machine-card';
+          machineDiv.innerHTML = `
+            <h3>${machine.config.emoji} ${machine.config.name} #${machine.id}</h3>
+            <p>Plot: ${machine.plotIndex + 1}</p>
+            <button class="btn" onclick="openMachine(${idx})">Open</button>
+          `;
+          ownedDiv.appendChild(machineDiv);
+        });
+      }
+      
+      const shopDiv = document.getElementById('machine-shop');
+      Object.entries(CONFIG.machines).forEach(([key, machine]) => {
+        const machineDiv = document.createElement('div');
+        machineDiv.className = 'machine-card';
+        machineDiv.innerHTML = `
+          <h3>${machine.emoji} ${machine.name}</h3>
+          <p>Cost: ${machine.cost}</p>
+        `;
+        
+        const buyBtn = document.createElement('button');
+        buyBtn.className = 'btn';
+        buyBtn.textContent = gameState.placingMachine?.type === key ? 'Placing...' : 'Buy & Place';
+        buyBtn.disabled = gameState.money < machine.cost || gameState.placingMachine !== null;
+        buyBtn.onclick = () => {
+          if (gameState.money >= machine.cost) {
+            gameState.money -= machine.cost;
+            gameState.placingMachine = { type: key, config: machine };
+            updateMoney();
+            initMachines();
+            switchTab('farm');
+          }
+        };
+        machineDiv.appendChild(buyBtn);
+        shopDiv.appendChild(machineDiv);
+      });
+    }
+
+    function openMachine(idx) {
+      const machine = gameState.machines[idx];
+      gameState.openMachineIndex = idx;
+      
+      const modalBody = document.getElementById('modal-body');
+      modalBody.innerHTML = `
+        <div class="modal-with-inventory">
+          <div class="modal-main">
+            <h2>${machine.config.emoji} ${machine.config.name} #${machine.id}</h2>
+            <div id="machine-ui-${idx}"></div>
+          </div>
+          <div class="modal-inventory">
+            <h3>Your Inventory</h3>
+            <div id="modal-inv-${idx}"></div>
+          </div>
+        </div>
+      `;
+      
+      renderMachineUI(idx);
+      renderModalInventory(idx);
+      document.getElementById('modal').classList.add('active');
+      
+      // Start update interval
+      if (window.machineUpdateInterval) clearInterval(window.machineUpdateInterval);
+      window.machineUpdateInterval = setInterval(() => {
+        if (gameState.openMachineIndex === idx) {
+          renderMachineUI(idx);
+        }
+      }, 500);
+    }
+
+    function renderModalInventory(machineIdx) {
+      const container = document.getElementById(`modal-inv-${machineIdx}`);
+      if (!container) return;
+      
+      container.innerHTML = '';
+      Object.entries(gameState.inventory).forEach(([type, count]) => {
+        const info = getItemInfo(type);
+        const displayName = getDisplayName(type);
+        const div = document.createElement('div');
+        div.className = 'modal-inv-item';
+        div.draggable = true;
+        div.innerHTML = `${info.emoji} ${displayName} (${count})`;
+        div.addEventListener('dragstart', (e) => {
+          gameState.draggedItem = { type, from: 'modal-inventory' };
+        });
+        container.appendChild(div);
+      });
+    }
+
+    function renderMachineUI(idx) {
+      const machine = gameState.machines[idx];
+      const container = document.getElementById(`machine-ui-${idx}`);
+      if (!container) return;
+      
+      container.innerHTML = '';
+      
+      // Input slots
+      if (machine.config.inputSlots > 0) {
+        const inputDiv = document.createElement('div');
+        inputDiv.innerHTML = '<h3>Input</h3>';
+        const slotsDiv = document.createElement('div');
+        slotsDiv.className = 'machine-slots';
+        
+        machine.inputSlots.forEach((slot, slotIdx) => {
+          const slotDiv = document.createElement('div');
+          slotDiv.className = slot ? 'slot filled' : 'slot';
+          slotDiv.addEventListener('dragover', (e) => e.preventDefault());
+          slotDiv.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (gameState.draggedItem && (gameState.draggedItem.from === 'inventory' || gameState.draggedItem.from === 'modal-inventory')) {
+              const type = gameState.draggedItem.type;
+              if (slot && slot.type === type) {
+                if (removeFromInventory(type, 1)) {
+                  machine.inputSlots[slotIdx].count += 1;
+                  renderMachineUI(idx);
+                  renderModalInventory(idx);
+                }
+              } else if (!slot) {
+                if (removeFromInventory(type, 1)) {
+                  machine.inputSlots[slotIdx] = { type, count: 1 };
+                  renderMachineUI(idx);
+                  renderModalInventory(idx);
+                }
+              }
+            }
+          });
+          
+          if (slot) {
+            const info = getItemInfo(slot.type);
+            slotDiv.innerHTML = `<div class="slot-item">${info.emoji}</div><div class="slot-count">${slot.count}</div>`;
+            slotDiv.onclick = () => {
+              addToInventory(slot.type, slot.count);
+              machine.inputSlots[slotIdx] = null;
+              renderMachineUI(idx);
+              renderModalInventory(idx);
+            };
+          }
+          
+          slotsDiv.appendChild(slotDiv);
+        });
+        inputDiv.appendChild(slotsDiv);
+        container.appendChild(inputDiv);
+      }
+      
+      // Process button/progress
+      const recipe = findMatchingRecipe(machine);
+      if (recipe) {
+        if (recipe.clicks) {
+          const btn = document.createElement('button');
+          btn.className = 'btn';
+          btn.textContent = `Process (${machine.clicks}/${recipe.clicks})`;
+          btn.onclick = () => {
+            machine.clicks++;
+            if (machine.clicks >= recipe.clicks) {
+              processRecipe(machine, recipe);
+              machine.clicks = 0;
+            }
+            renderMachineUI(idx);
+          };
+          container.appendChild(btn);
+        } else if (recipe.time && !machine.processing) {
+          const btn = document.createElement('button');
+          btn.className = 'btn';
+          btn.textContent = 'Start Processing';
+          btn.onclick = () => {
+            machine.processing = true;
+            machine.progress = 0;
+            renderMachineUI(idx);
+          };
+          container.appendChild(btn);
+        }
+      }
+      
+      if (machine.processing && recipe && recipe.time) {
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'progress-bar';
+        progressDiv.innerHTML = `<div class="progress-fill" style="width: ${machine.progress}%"></div>`;
+        container.appendChild(progressDiv);
+      }
+      
+      // Output slots
+      if (machine.config.outputSlots > 0) {
+        const outputDiv = document.createElement('div');
+        outputDiv.innerHTML = '<h3>Output</h3>';
+        const slotsDiv = document.createElement('div');
+        slotsDiv.className = 'machine-slots';
+        
+        machine.outputSlots.forEach((slot, slotIdx) => {
+          const slotDiv = document.createElement('div');
+          slotDiv.className = slot ? 'slot filled' : 'slot';
+          
+          if (slot) {
+            const info = getItemInfo(slot.type);
+            slotDiv.innerHTML = `<div class="slot-item">${info.emoji}</div><div class="slot-count">${slot.count}</div>`;
+            slotDiv.onclick = () => {
+              addToInventory(slot.type, slot.count);
+              machine.outputSlots[slotIdx] = null;
+              renderMachineUI(idx);
+              renderModalInventory(idx);
+            };
+          }
+          
+          slotsDiv.appendChild(slotDiv);
+        });
+        outputDiv.appendChild(slotsDiv);
+        container.appendChild(outputDiv);
+      }
+    }
+
+    function findMatchingRecipe(machine) {
+      for (const recipe of machine.config.recipes) {
+        if (recipe.input.length === 0) {
+          return recipe;
+        }
+        
+        let matches = true;
+        for (const req of recipe.input) {
+          const slot = machine.inputSlots.find(s => s && s.type === req.type && s.count >= req.count);
+          if (!slot) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) return recipe;
+      }
+      return null;
+    }
+
+    function processRecipe(machine, recipe) {
+      // Discover recipe for codex
+      const recipeKey = `${machine.type}_${recipe.output[0].type}`;
+      gameState.codex.recipesDiscovered.add(recipeKey);
+      
+      recipe.input.forEach(req => {
+        const slotIdx = machine.inputSlots.findIndex(s => s && s.type === req.type && s.count >= req.count);
+        if (slotIdx >= 0) {
+          machine.inputSlots[slotIdx].count -= req.count;
+          if (machine.inputSlots[slotIdx].count <= 0) {
+            machine.inputSlots[slotIdx] = null;
+          }
+        }
+      });
+      
+      // Process outputs with chance system
+      processRecipeOutputs(recipe, machine.outputSlots);
+      
+      machine.processing = false;
+      machine.progress = 0;
+    }
+
+    // ===== EMPLOYEES TAB =====
+    function initEmployees() {
+      const employeesTab = document.getElementById('employees-tab');
+      employeesTab.innerHTML = '<h2>Employees</h2>';
+      
+      const hireBtn = document.createElement('button');
+      hireBtn.className = 'btn';
+      hireBtn.textContent = 'Hire Employee ($500)';
+      hireBtn.disabled = gameState.money < 500;
+      hireBtn.onclick = () => {
+        if (gameState.money >= 500) {
+          gameState.money -= 500;
+          gameState.employees.push({
+            name: `Worker ${gameState.employees.length + 1}`,
+            job: null,
+            progress: 0,
+            currentPlot: 0
+          });
+          updateMoney();
+          initEmployees();
+        }
+      };
+      employeesTab.appendChild(hireBtn);
+      
+      gameState.employees.forEach((employee, idx) => {
+        const div = document.createElement('div');
+        div.className = 'employee-card';
+        div.innerHTML = `<h3>${employee.name}</h3>`;
+        
+        if (employee.job) {
+          div.innerHTML += `<p>Job: ${employee.job.type}</p>`;
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'btn btn-small';
+          cancelBtn.textContent = 'Cancel Job';
+          cancelBtn.onclick = () => {
+            employee.job = null;
+            employee.progress = 0;
+            initEmployees();
+          };
+          div.appendChild(cancelBtn);
+        } else {
+          div.innerHTML += '<p>Idle</p>';
+          const assignBtn = document.createElement('button');
+          assignBtn.className = 'btn';
+          assignBtn.textContent = 'Assign Job';
+          assignBtn.onclick = () => showJobAssignment(idx);
+          div.appendChild(assignBtn);
+        }
+        
+        employeesTab.appendChild(div);
+      });
+    }
+
+    function showJobAssignment(empIdx) {
+      const modalBody = document.getElementById('modal-body');
+      modalBody.innerHTML = '<h2>Assign Job</h2>';
+      
+      // Harvest job
+      const harvestDiv = document.createElement('div');
+      harvestDiv.className = 'job-config';
+      harvestDiv.innerHTML = `
+        <h3>🌾 Harvest & Store</h3>
+        <p>Harvest plants and move to crate</p>
+        <label>Plant Filter (optional):</label>
+        <select id="harvest-filter">
+          <option value="">Any Plant</option>
+          ${Object.entries(CONFIG.plants).map(([key, plant]) => {
+            const displayName = getDisplayName(key);
+            return `<option value="${key}">${plant.emoji} ${displayName}</option>`;
+          }).join('')}
+        </select>
+        <label>Target Crate:</label>
+        <select id="harvest-crate">
+          <option value="">Select Crate</option>
+          ${gameState.machines.filter(m => m.type === 'crate').map(m => 
+            `<option value="${m.id}">Crate #${m.id}</option>`
+          ).join('')}
+        </select>
+      `;
+      const harvestBtn = document.createElement('button');
+      harvestBtn.className = 'btn';
+      harvestBtn.textContent = 'Assign';
+      harvestBtn.onclick = () => {
+        const crateId = document.getElementById('harvest-crate').value;
+        const filter = document.getElementById('harvest-filter').value;
+        if (crateId) {
+          gameState.employees[empIdx].job = { 
+            type: 'harvest', 
+            crateId: parseInt(crateId),
+            plantFilter: filter || null
+          };
+          gameState.employees[empIdx].progress = 0;
+          closeModal();
+          initEmployees();
+        }
+      };
+      harvestDiv.appendChild(harvestBtn);
+      modalBody.appendChild(harvestDiv);
+      
+      // Plant job
+      const plantDiv = document.createElement('div');
+      plantDiv.className = 'job-config';
+      plantDiv.innerHTML = `
+        <h3>🌱 Plant Seeds</h3>
+        <p>Use seeds from crate to plant</p>
+        <label>Source Crate:</label>
+        <select id="plant-crate">
+          <option value="">Select Crate</option>
+          ${gameState.machines.filter(m => m.type === 'crate').map(m => 
+            `<option value="${m.id}">Crate #${m.id}</option>`
+          ).join('')}
+        </select>
+      `;
+      const plantBtn = document.createElement('button');
+      plantBtn.className = 'btn';
+      plantBtn.textContent = 'Assign';
+      plantBtn.onclick = () => {
+        const crateId = document.getElementById('plant-crate').value;
+        if (crateId) {
+          gameState.employees[empIdx].job = { type: 'plant', crateId: parseInt(crateId) };
+          gameState.employees[empIdx].progress = 0;
+          closeModal();
+          initEmployees();
+        }
+      };
+      plantDiv.appendChild(plantBtn);
+      modalBody.appendChild(plantDiv);
+      
+      // Move items job
+      const moveDiv = document.createElement('div');
+      moveDiv.className = 'job-config';
+      moveDiv.innerHTML = `
+        <h3>📦 Move Items</h3>
+        <p>Move items between machines</p>
+        <label>Item Filter (optional):</label>
+        <select id="move-filter">
+          <option value="">Any Item</option>
+          ${Object.entries(CONFIG.items).map(([key, item]) => {
+            const displayName = getDisplayName(key);
+            return `<option value="${key}">${item.emoji} ${displayName}</option>`;
+          }).join('')}
+          ${Object.entries(CONFIG.plants).map(([key, plant]) => {
+            const displayName = getDisplayName(key);
+            return `<option value="${key}">${plant.emoji} ${displayName}</option>`;
+          }).join('')}
+        </select>
+        <label>From Machine:</label>
+        <select id="move-from">
+          <option value="">Select Machine</option>
+          ${gameState.machines.map(m => 
+            `<option value="${m.id}">${m.config.name} #${m.id}</option>`
+          ).join('')}
+        </select>
+        <label>To Machine:</label>
+        <select id="move-to">
+          <option value="">Select Machine</option>
+          ${gameState.machines.map(m => 
+            `<option value="${m.id}">${m.config.name} #${m.id}</option>`
+          ).join('')}
+        </select>
+      `;
+      const moveBtn = document.createElement('button');
+      moveBtn.className = 'btn';
+      moveBtn.textContent = 'Assign';
+      moveBtn.onclick = () => {
+        const fromId = document.getElementById('move-from').value;
+        const toId = document.getElementById('move-to').value;
+        const filter = document.getElementById('move-filter').value;
+        if (fromId && toId) {
+          gameState.employees[empIdx].job = { 
+            type: 'move', 
+            fromMachine: parseInt(fromId),
+            toMachine: parseInt(toId),
+            itemFilter: filter || null
+          };
+          gameState.employees[empIdx].progress = 0;
+          closeModal();
+          initEmployees();
+        }
+      };
+      moveDiv.appendChild(moveBtn);
+      modalBody.appendChild(moveDiv);
+      
+      // Process machine job
+      const processDiv = document.createElement('div');
+      processDiv.className = 'job-config';
+      processDiv.innerHTML = `
+        <h3>⚙️ Operate Machine</h3>
+        <p>Click process/start on machine</p>
+        <label>Machine:</label>
+        <select id="process-machine">
+          <option value="">Select Machine</option>
+          ${gameState.machines.filter(m => m.config.recipes && m.config.recipes.length > 0).map(m => 
+            `<option value="${m.id}">${m.config.name} #${m.id}</option>`
+          ).join('')}
+        </select>
+      `;
+      const processBtn = document.createElement('button');
+      processBtn.className = 'btn';
+      processBtn.textContent = 'Assign';
+      processBtn.onclick = () => {
+        const machineId = document.getElementById('process-machine').value;
+        if (machineId) {
+          gameState.employees[empIdx].job = { 
+            type: 'process', 
+            machineId: parseInt(machineId)
+          };
+          gameState.employees[empIdx].progress = 0;
+          closeModal();
+          initEmployees();
+        }
+      };
+      processDiv.appendChild(processBtn);
+      modalBody.appendChild(processDiv);
+      
+      // Buy from market job
+      const buyDiv = document.createElement('div');
+      buyDiv.className = 'job-config';
+      buyDiv.innerHTML = `
+        <h3>🛒 Buy from Market</h3>
+        <p>Buy item and store in crate</p>
+        <label>Item to Buy:</label>
+        <select id="buy-item">
+          <option value="">Select Item</option>
+          ${Object.keys(CONFIG.plants).map(key => {
+            const displayName = getDisplayName(key);
+            return `<option value="${key}_seed">🌱 ${displayName} Seed</option>`;
+          }).join('')}
+        </select>
+        <label>Target Amount:</label>
+        <input type="number" id="buy-amount" value="10" min="1">
+        <label>Store in Crate:</label>
+        <select id="buy-crate">
+          <option value="">Select Crate</option>
+          ${gameState.machines.filter(m => m.type === 'crate').map(m => 
+            `<option value="${m.id}">Crate #${m.id}</option>`
+          ).join('')}
+        </select>
+      `;
+      const buyBtn = document.createElement('button');
+      buyBtn.className = 'btn';
+      buyBtn.textContent = 'Assign';
+      buyBtn.onclick = () => {
+        const itemType = document.getElementById('buy-item').value;
+        const amount = parseInt(document.getElementById('buy-amount').value);
+        const crateId = document.getElementById('buy-crate').value;
+        if (itemType && amount && crateId) {
+          gameState.employees[empIdx].job = { 
+            type: 'buy_market', 
+            itemType,
+            targetAmount: amount,
+            crateId: parseInt(crateId)
+          };
+          gameState.employees[empIdx].progress = 0;
+          closeModal();
+          initEmployees();
+        }
+      };
+      buyDiv.appendChild(buyBtn);
+      modalBody.appendChild(buyDiv);
+      
+      document.getElementById('modal').classList.add('active');
+    }
+
+    // ===== CODEX TAB =====
+    function initCodex() {
+      const codexTab = document.getElementById('codex-tab');
+      codexTab.innerHTML = '<h2>📖 Codex</h2><p>Discover items, plants, machines, and recipes as you play!</p>';
+      
+      // Plants Section
+      const plantsSection = document.createElement('div');
+      plantsSection.className = 'codex-section';
+      plantsSection.innerHTML = '<h2>🌱 Plants</h2>';
+      Object.entries(CONFIG.plants).forEach(([key, plant]) => {
+        const discovered = gameState.codex.plantsDiscovered.has(key);
+        const div = document.createElement('div');
+        div.className = discovered ? 'codex-item' : 'codex-item locked';
+        
+        if (discovered) {
+          div.innerHTML = `
+            <div class="codex-header">
+              <span class="codex-emoji">${plant.emoji}</span>
+              <span class="codex-title">${plant.name}</span>
+            </div>
+            <div class="codex-description">${plant.description}</div>
+            <div class="codex-stats">
+              <span class="codex-stat">⏱️ Grow Time: ${plant.growTime}s</span>
+              <span class="codex-stat">💰 Value: ${plant.basePrice}</span>
+              <span class="codex-stat">🌱 Seed Cost: ${plant.seedPrice}</span>
+              ${plant.isTree ? `<span class="codex-stat">🌳 Tree (Multi-yield)</span>` : ''}
+            </div>
+          `;
+        } else {
+          div.innerHTML = `
+            <div class="codex-header">
+              <span class="codex-emoji">❓</span>
+              <span class="codex-title">???</span>
+            </div>
+            <div class="codex-description">Not yet discovered. Harvest this plant to unlock!</div>
+          `;
+        }
+        plantsSection.appendChild(div);
+      });
+      codexTab.appendChild(plantsSection);
+      
+      // Items Section
+      const itemsSection = document.createElement('div');
+      itemsSection.className = 'codex-section';
+      itemsSection.innerHTML = '<h2>📦 Items</h2>';
+      Object.entries(CONFIG.items).forEach(([key, item]) => {
+        const discovered = gameState.codex.itemsDiscovered.has(key);
+        const div = document.createElement('div');
+        div.className = discovered ? 'codex-item' : 'codex-item locked';
+        
+        if (discovered) {
+          div.innerHTML = `
+            <div class="codex-header">
+              <span class="codex-emoji">${item.emoji}</span>
+              <span class="codex-title">${item.name}</span>
+            </div>
+            <div class="codex-description">${item.description}</div>
+            <div class="codex-stats">
+              <span class="codex-stat">💰 Value: ${item.basePrice}</span>
+            </div>
+          `;
+        } else {
+          div.innerHTML = `
+            <div class="codex-header">
+              <span class="codex-emoji">❓</span>
+              <span class="codex-title">???</span>
+            </div>
+            <div class="codex-description">Not yet discovered. Obtain this item to unlock!</div>
+          `;
+        }
+        itemsSection.appendChild(div);
+      });
+      codexTab.appendChild(itemsSection);
+      
+      // Machines Section
+      const machinesSection = document.createElement('div');
+      machinesSection.className = 'codex-section';
+      machinesSection.innerHTML = '<h2>⚙️ Machines</h2>';
+      Object.entries(CONFIG.machines).forEach(([key, machine]) => {
+        const discovered = gameState.codex.machinesDiscovered.has(key);
+        const div = document.createElement('div');
+        div.className = discovered ? 'codex-item' : 'codex-item locked';
+        
+        if (discovered) {
+          div.innerHTML = `
+            <div class="codex-header">
+              <span class="codex-emoji">${machine.emoji}</span>
+              <span class="codex-title">${machine.name}</span>
+            </div>
+            <div class="codex-description">${machine.description}</div>
+            <div class="codex-stats">
+              <span class="codex-stat">💰 Cost: ${machine.cost}</span>
+              <span class="codex-stat">🔥 Inputs: ${machine.inputSlots}</span>
+              <span class="codex-stat">📤 Outputs: ${machine.outputSlots}</span>
+            </div>
+          `;
+        } else {
+          div.innerHTML = `
+            <div class="codex-header">
+              <span class="codex-emoji">❓</span>
+              <span class="codex-title">???</span>
+            </div>
+            <div class="codex-description">Not yet discovered. Place this machine to unlock!</div>
+          `;
+        }
+        machinesSection.appendChild(div);
+      });
+      codexTab.appendChild(machinesSection);
+      
+      // Recipes Section
+      const recipesSection = document.createElement('div');
+      recipesSection.className = 'codex-section';
+      recipesSection.innerHTML = '<h2>📜 Recipes</h2>';
+      Object.entries(CONFIG.machines).forEach(([machineKey, machine]) => {
+        machine.recipes.forEach((recipe, idx) => {
+          if (recipe.input.length === 0 && recipe.output.length === 1 && !recipe.output[0].chance) return; // Skip simple empty input recipes
+          
+          const recipeKey = `${machineKey}_${recipe.output[0].type}`;
+          const discovered = gameState.codex.recipesDiscovered.has(recipeKey);
+          const div = document.createElement('div');
+          div.className = discovered ? 'codex-item' : 'codex-item locked';
+          
+          if (discovered) {
+            const inputStr = recipe.input.length > 0 ? recipe.input.map(inp => {
+              const info = getItemInfo(inp.type);
+              return `${info.emoji} ${inp.count}x ${info.name}`;
+            }).join(' + ') : 'None';
+            
+            const outputStr = recipe.output.map(out => {
+              const info = getItemInfo(out.type);
+              const chanceStr = out.chance ? ` (${out.chance}%)` : '';
+              return `<div class="recipe-output-item">${info.emoji} ${out.count}x ${info.name}${chanceStr}</div>`;
+            }).join('');
+            
+            div.innerHTML = `
+              <div class="codex-header">
+                <span class="codex-emoji">${machine.emoji}</span>
+                <span class="codex-title">${machine.name} Recipe</span>
+              </div>
+              <div class="codex-description">
+                <strong>Input:</strong> ${inputStr}<br>
+                <strong>Output:</strong><br>${outputStr}
+              </div>
+              <div class="codex-stats">
+                ${recipe.time ? `<span class="codex-stat">⏱️ Time: ${recipe.time}s</span>` : ''}
+                ${recipe.clicks ? `<span class="codex-stat">👆 Clicks: ${recipe.clicks}</span>` : ''}
+              </div>
+            `;
+          } else {
+            div.innerHTML = `
+              <div class="codex-header">
+                <span class="codex-emoji">❓</span>
+                <span class="codex-title">Unknown Recipe</span>
+              </div>
+              <div class="codex-description">Not yet discovered. Process this recipe to unlock!</div>
+            `;
+          }
+          recipesSection.appendChild(div);
+        });
+      });
+      codexTab.appendChild(recipesSection);
+    }
+
+    // ===== UPGRADES TAB =====
+    function initUpgrades() {
+      const upgradesTab = document.getElementById('upgrades-tab');
+      upgradesTab.innerHTML = '<h2>Upgrades</h2>';
+      
+      const plotCost = 50 * (gameState.upgrades.plotsPurchased + 1);
+      const plotDiv = document.createElement('div');
+      plotDiv.className = 'upgrade-card';
+      plotDiv.innerHTML = `
+        <div>
+          <h3>🌾 Extra Farm Plot</h3>
+          <p>Add one more plot to your farm</p>
+          <p>Purchased: ${gameState.upgrades.plotsPurchased}</p>
+        </div>
+        <div>
+          <p><strong>${plotCost}</strong></p>
+        </div>
+      `;
+      
+      const plotBtn = document.createElement('button');
+      plotBtn.className = 'btn';
+      plotBtn.textContent = 'Buy';
+      plotBtn.disabled = gameState.money < plotCost;
+      plotBtn.onclick = () => {
+        if (gameState.money >= plotCost) {
+          gameState.money -= plotCost;
+          gameState.upgrades.plotsPurchased++;
+          gameState.plots.push({ type: 'plot', plant: null, progress: 0, machine: null });
+          updateMoney();
+          initUpgrades();
+          initFarm();
+        }
+      };
+      plotDiv.appendChild(plotBtn);
+      upgradesTab.appendChild(plotDiv);
+      
+      const speedCost = 2000 * (gameState.upgrades.employeeSpeed + 1);
+      const speedDiv = document.createElement('div');
+      speedDiv.className = 'upgrade-card';
+      speedDiv.innerHTML = `
+        <div>
+          <h3>⚡ Faster Employees</h3>
+          <p>Employees work 20% faster</p>
+          <p>Level: ${gameState.upgrades.employeeSpeed}</p>
+        </div>
+        <div>
+          <p><strong>${speedCost}</strong></p>
+        </div>
+      `;
+      
+      const speedBtn = document.createElement('button');
+      speedBtn.className = 'btn';
+      speedBtn.textContent = 'Buy';
+      speedBtn.disabled = gameState.money < speedCost;
+      speedBtn.onclick = () => {
+        if (gameState.money >= speedCost) {
+          gameState.money -= speedCost;
+          gameState.upgrades.employeeSpeed++;
+          updateMoney();
+          initUpgrades();
+        }
+      };
+      speedDiv.appendChild(speedBtn);
+      upgradesTab.appendChild(speedDiv);
+
+      if (localStorage.getItem('the5ChallengeRumble_winner') === 'true') {
+        const fixCost = 750;
+        const fixDiv = document.createElement('div');
+        fixDiv.className = 'upgrade-card';
+        fixDiv.innerHTML = `
+          <div>
+            <h3>🔧 Fix 5CR</h3>
+            <p>Removes the winner state from 5CR</p>
+          </div>
+          <div>
+            <p><strong>${fixCost}</strong></p>
+          </div>
+        `;
+
+        const fixBtn = document.createElement('button');
+        fixBtn.className = 'btn';
+        fixBtn.textContent = 'Buy';
+        fixBtn.disabled = gameState.money < fixCost;
+        fixBtn.onclick = () => {
+          if (gameState.money >= fixCost) {
+            gameState.money -= fixCost;
+            localStorage.setItem('the5ChallengeRumble_winner', 'false');
+            updateMoney();
+            initUpgrades();
+          }
+        };
+        fixDiv.appendChild(fixBtn);
+        upgradesTab.appendChild(fixDiv);
+      }
+    }
+
+    // ===== TAB SWITCHING =====
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+      
+      event.target.classList.add('active');
+      document.getElementById(`${tab}-tab`).style.display = 'block';
+      
+      if (tab === 'farm') initFarm();
+      else if (tab === 'market') initMarket();
+      else if (tab === 'machines') initMachines();
+      else if (tab === 'employees') initEmployees();
+      else if (tab === 'upgrades') initUpgrades();
+      else if (tab === 'codex') initCodex();
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('active');
+      gameState.openMachineIndex = null;
+      if (window.machineUpdateInterval) {
+        clearInterval(window.machineUpdateInterval);
+        window.machineUpdateInterval = null;
+      }
+    }
+
+    // ===== GAME LOOP =====
+    function gameLoop() {
+      gameState.time += 0.1;
+      document.getElementById('game-time').textContent = Math.floor(gameState.time);
+      
+      // Grow plants
+      gameState.plots.forEach(plot => {
+        if (plot.plant && plot.progress < 100) {
+          const growTime = CONFIG.plants[plot.plant].growTime;
+          plot.progress += (100 / growTime) * 0.1;
+          if (plot.progress > 100) plot.progress = 100;
+        }
+      });
+      
+      // Process machines
+      gameState.machines.forEach(machine => {
+        // Instant transfer for crates
+        if (machine.config.instantTransfer) {
+          machine.inputSlots.forEach((slot, idx) => {
+            if (slot && slot.count > 0) {
+              // Try to add to output slots
+              let added = false;
+              
+              // Try stacking first
+              for (let i = 0; i < machine.outputSlots.length; i++) {
+                if (machine.outputSlots[i] && machine.outputSlots[i].type === slot.type) {
+                  machine.outputSlots[i].count += slot.count;
+                  machine.inputSlots[idx] = null;
+                  added = true;
+                  break;
+                }
+              }
+              
+              // Find empty slot
+              if (!added) {
+                for (let i = 0; i < machine.outputSlots.length; i++) {
+                  if (!machine.outputSlots[i]) {
+                    machine.outputSlots[i] = { type: slot.type, count: slot.count };
+                    machine.inputSlots[idx] = null;
+                    break;
+                  }
+                }
+              }
+            }
+          });
+        }
+        
+        // Auto-sell in market stalls
+        if (machine.config.isMarket) {
+          machine.inputSlots.forEach((slot, idx) => {
+            if (slot && slot.count > 0) {
+              const info = getItemInfo(slot.type);
+              gameState.money += info.basePrice;
+              slot.count--;
+              if (slot.count <= 0) {
+                machine.inputSlots[idx] = null;
+              }
+              updateMoney();
+            }
+          });
+        }
+        
+        if (machine.config.autoProcess && !machine.processing) {
+          const recipe = findMatchingRecipe(machine);
+          if (recipe && recipe.time) {
+            machine.processing = true;
+            machine.progress = 0;
+          }
+        }
+        
+        if (machine.processing) {
+          const recipe = findMatchingRecipe(machine);
+          if (recipe && recipe.time) {
+            machine.progress += (100 / recipe.time) * 0.1;
+            if (machine.progress >= 100) {
+              processRecipe(machine, recipe);
+            }
+          }
+        }
+      });
+      
+      // Employee AI
+      const speedMultiplier = 1 + (gameState.upgrades.employeeSpeed * 0.2);
+      gameState.employees.forEach(employee => {
+        if (employee.job) {
+          employee.progress += 0.5 * speedMultiplier;
+          
+          if (employee.progress >= 100) {
+            const job = employee.job;
+            let actionPerformed = false;
+            
+            if (job.type === 'harvest') {
+              let plot = gameState.plots.find(p => {
+                if (!p.plant || p.progress < 100) return false;
+                if (job.plantFilter && p.plant !== job.plantFilter) return false;
+                return true;
+              });
+              
+              if (plot) {
+                employee.currentPlot = gameState.plots.indexOf(plot);
+                const plantConfig = CONFIG.plants[plot.plant];
+                
+                // Discover the plant for codex
+                gameState.codex.plantsDiscovered.add(plot.plant);
+                
+                const items = [];
+                if (plantConfig.isTree && plantConfig.yields) {
+                  items.push(...plantConfig.yields);
+                } else {
+                  items.push(plot.plant);
+                }
+                
+                items.forEach(item => {
+                  addItemToCrate(job.crateId, item, 1);
+                });
+                
+                plot.plant = null;
+                plot.progress = 0;
+                actionPerformed = true;
+              }
+            } else if (job.type === 'plant') {
+              const emptyPlot = gameState.plots.find(p => !p.plant && !p.machine);
+              if (emptyPlot) {
+                employee.currentPlot = gameState.plots.indexOf(emptyPlot);
+                const crateItems = getItemsFromCrate(job.crateId);
+                
+                for (const [itemType, count] of Object.entries(crateItems)) {
+                  if (itemType.endsWith('_seed') && count > 0) {
+                    const plantType = itemType.replace('_seed', '');
+                    if (CONFIG.plants[plantType]) {
+                      if (removeItemFromCrate(job.crateId, itemType, 1)) {
+                        emptyPlot.plant = plantType;
+                        emptyPlot.progress = 0;
+                        actionPerformed = true;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            } else if (job.type === 'move') {
+              const fromMachine = getMachineById(job.fromMachine);
+              const toMachine = getMachineById(job.toMachine);
+              
+              if (fromMachine && toMachine) {
+                employee.currentPlot = fromMachine.plotIndex;
+                
+                // Try to move from output of fromMachine to input of toMachine
+                for (let i = 0; i < fromMachine.outputSlots.length; i++) {
+                  const slot = fromMachine.outputSlots[i];
+                  if (slot && slot.count > 0) {
+                    // Check item filter
+                    if (job.itemFilter && slot.type !== job.itemFilter) continue;
+                    
+                    // Try to add to toMachine
+                    let added = false;
+                    
+                    // Try stacking first
+                    for (let j = 0; j < toMachine.inputSlots.length; j++) {
+                      if (toMachine.inputSlots[j] && toMachine.inputSlots[j].type === slot.type) {
+                        toMachine.inputSlots[j].count += 1;
+                        slot.count--;
+                        if (slot.count <= 0) {
+                          fromMachine.outputSlots[i] = null;
+                        }
+                        added = true;
+                        break;
+                      }
+                    }
+                    
+                    // Find empty slot
+                    if (!added) {
+                      for (let j = 0; j < toMachine.inputSlots.length; j++) {
+                        if (!toMachine.inputSlots[j]) {
+                          toMachine.inputSlots[j] = { type: slot.type, count: 1 };
+                          slot.count--;
+                          if (slot.count <= 0) {
+                            fromMachine.outputSlots[i] = null;
+                          }
+                          added = true;
+                          break;
+                        }
+                      }
+                    }
+                    
+                    if (added) {
+                      actionPerformed = true;
+                      break;
+                    }
+                  }
+                }
+              }
+            } else if (job.type === 'process') {
+              const machine = getMachineById(job.machineId);
+              if (machine) {
+                employee.currentPlot = machine.plotIndex;
+                const recipe = findMatchingRecipe(machine);
+                
+                if (recipe) {
+                  if (recipe.clicks && !machine.processing) {
+                    machine.clicks++;
+                    if (machine.clicks >= recipe.clicks) {
+                      processRecipe(machine, recipe);
+                      machine.clicks = 0;
+                      actionPerformed = true;
+                    }
+                  } else if (recipe.time && !machine.processing) {
+                    machine.processing = true;
+                    machine.progress = 0;
+                    actionPerformed = true;
+                  }
+                }
+              }
+            } else if (job.type === 'buy_market') {
+              const crate = getMachineById(job.crateId);
+              if (crate) {
+                employee.currentPlot = crate.plotIndex;
+                const crateItems = getItemsFromCrate(job.crateId);
+                const currentAmount = crateItems[job.itemType] || 0;
+                
+                if (currentAmount < job.targetAmount) {
+                  const info = getItemInfo(job.itemType);
+                  const price = info.basePrice;
+                  
+                  if (gameState.money >= price) {
+                    gameState.money -= price;
+                    addItemToCrate(job.crateId, job.itemType, 1);
+                    updateMoney();
+                    actionPerformed = true;
+                  }
+                }
+              }
+            }
+            
+            employee.progress = 0;
+            
+            // Update the farm tab if action was performed and we're on the farm tab
+            if (actionPerformed) {
+              const activeTab = document.querySelector('.tab.active');
+              if (activeTab && activeTab.textContent.toLowerCase() === 'farm') {
+                initFarm();
+              }
+            }
+          }
+        }
+      });
+      
+      // Refresh current tab
+      const activeTab = document.querySelector('.tab.active');
+      if (activeTab) {
+        const tabName = activeTab.textContent.toLowerCase();
+        if (tabName === 'farm') {
+          const plots = document.querySelectorAll('.plant-plot');
+          gameState.plots.forEach((plot, idx) => {
+            if (plots[idx] && plot.plant) {
+              const progressBar = plots[idx].querySelector('.plant-progress-bar');
+              if (progressBar) {
+                progressBar.style.width = plot.progress + '%';
+              }
+            }
+          });
+          
+          // Update employee positions
+          renderEmployees();
+        }
+      }
+    }
+
+    // ===== INITIALIZATION =====
+    function init() {
+      addToInventory('wheat_seed', 1);
+      
+      updateInventory();
+      updateMoney();
+      initFarm();
+      
+      setInterval(gameLoop, 100);
+
+      // Check every 10 seconds whether the 5CR winner flag is set,
+      // and refresh the Upgrades tab if it's currently open
+      setInterval(() => {
+        const upgradesTab = document.getElementById('upgrades-tab');
+        if (upgradesTab && upgradesTab.style.display !== 'none') {
+          initUpgrades();
+        }
+      }, 10000);
+    }
+
+    init();
+  </script>
+</body>
+</html>
