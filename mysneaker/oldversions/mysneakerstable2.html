@@ -1,0 +1,2874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mysneaker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0e0e0e;
+      --panel: #181818;
+      --border: #2a2a2a;
+      --cell-up: #2e2e2e;
+      --cell-up-hi: #3a3a3a;
+      --cell-down: #1a1a1a;
+      --cell-border-light: #484848;
+      --cell-border-dark: #111;
+      --mine-bg: #c0392b;
+      --flag-color: #e67e22;
+      --accent: #e05c00;
+      --text: #e0dbd4;
+      --text-dim: #666;
+      --win-color: #27ae60;
+      --lose-color: #c0392b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 36px 20px 60px;
+    }
+    header { text-align: center; margin-bottom: 20px; }
+    h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 64px;
+      letter-spacing: 6px;
+      color: #fff;
+      line-height: 1;
+    }
+    h1 span { color: var(--accent); }
+    .subtitle {
+      font-size: 11px;
+      letter-spacing: 4px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* OVERLAYS */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.88);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .overlay.hidden { display: none; }
+    .overlay-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 28px 32px;
+      max-width: 700px;
+      width: 96vw;
+      text-align: center;
+    }
+    .overlay-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 30px;
+      letter-spacing: 4px;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .overlay-sub {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .modifier-cards {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .mod-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 14px 12px;
+      width: 190px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: left;
+    }
+    .mod-card:hover { border-color: var(--accent); background: #1f1f1f; }
+    .mod-card-name {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 16px;
+      letter-spacing: 2px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .mod-card-name.rare { color: #c084fc; }
+    .mod-card-name.once { color: #f59e0b; }
+    .mod-card-name.oneround { color: #a78bfa; }
+    .mod-card-desc { font-size: 10px; color: var(--text-dim); line-height: 1.5; }
+    .mod-card-rarity {
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 8px;
+      color: #888;
+    }
+    .mod-card-rarity.rare { color: #c084fc; }
+    .mod-card-rarity.once { color: #f59e0b; }
+    .mod-card-rarity.oneround { color: #a78bfa; }
+    .vent-active { outline: 2px solid #f59e0b !important; }
+
+    /* TOLL OVERLAY */
+    .toll-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 32px;
+      letter-spacing: 4px;
+      color: #c0392b;
+      margin-bottom: 8px;
+    }
+    .toll-amount {
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 12px 0;
+    }
+
+    /* PANEL */
+    #panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 20px 24px;
+      width: fit-content;
+    }
+    #controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 16px;
+      letter-spacing: 2px;
+      padding: 5px 16px 3px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #ff6f1a; }
+    button:active { background: #c04f00; }
+    button:disabled { background: #333; color: #555; cursor: not-allowed; }
+    .ability-btn {
+      font-size: 12px;
+      padding: 4px 10px 2px;
+      background: #1a3a5c;
+      letter-spacing: 1px;
+    }
+    .ability-btn:hover { background: #204870; }
+    .ability-btn.ab-active {
+      background: #b84500;
+      animation: pulse 0.7s infinite alternate;
+    }
+    .ability-btn.beer-on { background: #4a7a00; }
+    @keyframes pulse { from { opacity:1; } to { opacity:0.85; } }
+
+    /* HUD */
+    #hud {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .hud-item { display: flex; flex-direction: column; gap: 2px; }
+    .hud-label { font-size: 9px; letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; }
+    .hud-value { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1; }
+    .hud-value.credits { color: #f59e0b; }
+    .hud-value.hearts { color: #e05c5c; font-size: 18px; }
+
+    #active-mods {
+      font-size: 9px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+      min-height: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .mod-tag {
+      background: #222;
+      border: 1px solid #333;
+      padding: 2px 6px;
+      font-size: 9px;
+      letter-spacing: 1px;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+    .mod-tag.pawn-sellable {
+      border-color: #f59e0b;
+      box-shadow: 0 0 4px #f59e0b55;
+      cursor: pointer;
+    }
+    .mod-tag.pawn-sellable:hover {
+      background: #2a1f00;
+    }
+    #abilities-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .shield-label {
+      font-size: 10px;
+      color: #5ce0a0;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      align-self: center;
+    }
+
+    /* BOARD */
+    #board { display: inline-block; line-height: 0; border: 1px solid var(--border); }
+    .row { display: flex; }
+    .cell {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      user-select: none;
+      background: var(--cell-up);
+      box-shadow: inset 2px 2px 0 var(--cell-border-light), inset -2px -2px 0 var(--cell-border-dark);
+      transition: background 0.05s;
+    }
+    .cell:hover:not(.revealed):not(.mine):not(.sonar-mine) { background: var(--cell-up-hi); }
+    .cell:active:not(.revealed):not(.mine):not(.sonar-mine) {
+      background: var(--cell-down);
+      box-shadow: inset 2px 2px 0 var(--cell-border-dark), inset -2px -2px 0 var(--cell-border-light);
+    }
+    .cell.revealed {
+      background: var(--cell-down);
+      box-shadow: inset 1px 1px 0 #111, inset -1px -1px 0 #222;
+      cursor: default;
+    }
+    .cell.flagged { color: var(--flag-color); font-size: 11px; }
+    .cell.mine { background: var(--mine-bg); box-shadow: none; cursor: default; }
+    .cell.mine-claymore { background: #14532d; box-shadow: none; cursor: default; color: #4ade80; pointer-events: none; }
+    .cell.sonar-beacon { background: #0d2840; box-shadow: inset 2px 2px 0 #1a4060, inset -2px -2px 0 #040d14; color:#4ab0f0; font-size:10px; cursor:default; }
+    .cell.sonar-mine { background: #1a0d2a; box-shadow: inset 1px 1px 0 #111; color:#e05c5c; cursor:default; }
+    .cell.sonar-mine-claymore { background: #0d2a14; box-shadow: inset 1px 1px 0 #111; color:#4ade80; cursor:default; }
+    .cell.treasure { }
+    .cell.treasure-found { background: #7a5c00; box-shadow: none; cursor: default; color: #ffd700; font-size: 14px; }
+    .cell[data-n="1"] { color: #5b9ef4; }
+    .cell[data-n="2"] { color: #52c48a; }
+    .cell[data-n="3"] { color: #e05c5c; }
+    .cell[data-n="4"] { color: #8a6be8; }
+    .cell[data-n="5"] { color: #e07c5c; }
+    .cell[data-n="6"] { color: #5ce0d0; }
+    .cell[data-n="7"] { color: #e0c05c; }
+    .cell[data-n="8"] { color: #aaa; }
+
+    #message {
+      margin-top: 14px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      min-height: 20px;
+    }
+    #message.win { color: var(--win-color); }
+    #message.lose { color: var(--lose-color); }
+    #round-summary { margin-top: 8px; font-size: 11px; color: var(--text-dim); line-height: 1.7; }
+
+    footer { margin-top: 14px; font-size: 10px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+
+    @keyframes heartBounce { 0%{transform:scale(1)} 50%{transform:scale(1.5)} 100%{transform:scale(1)} }
+    .bounce { animation: heartBounce 0.3s ease; }
+
+    /* Colorblind modifier */
+    body.colorblind-mode { filter: saturate(0%); }
+
+    /* Blue mode — Mystery upgrade replaces red with blue */
+    body.blue-mode { --mine-bg: #1a3a80; --lose-color: #2255cc; --flag-color: #3a9ef4; }
+    body.blue-mode .mine { background: #1a3a80 !important; }
+    body.blue-mode .toll-title { color: #2255cc !important; }
+    body.blue-mode #big-red-btn {
+      background: #2255cc !important;
+      border-color: #2255cc !important;
+      box-shadow: none !important;
+    }
+    body.blue-mode #big-red-btn:hover {
+      background: #3366dd !important;
+      border-color: #3366dd !important;
+    }
+    body.blue-mode #mystery-panel-box { border-color: #1133aa !important; }
+    body.blue-mode #mystery-btn-widget button { border-color: #2255cc !important; color: #4488ff !important; }
+    body.blue-mode #mystery-btn-widget button:hover { background: #2255cc !important; color: #fff !important; }
+    body.blue-mode .upgrade-name { color: #4488ff !important; }
+    body.blue-mode .upgrade-buy-btn { border-color: #1133aa !important; color: #4488ff !important; }
+    body.blue-mode .upgrade-buy-btn:hover:not(:disabled) { background: #2255cc !important; border-color: #2255cc !important; color: #fff !important; }
+    body.blue-mode #mystery-money-display { color: #4488ff !important; }
+    body.blue-mode .upgrade-cost { color: #6688ff !important; }
+    body.blue-mode #mystery-upgrades-title { color: #888 !important; }
+
+    /* Color Number modifier — cells show a color swatch instead of a digit */
+    .cell.color-number-cell { font-size: 8px; }
+
+    /* Sin modifier tags */
+    .mod-tag.sin { color: #ef4444; border-color: #7f1d1d; }
+    /* Devil's Favor tag */
+    .mod-tag.devils { color: #ff6b6b; border-color: #c0392b; text-shadow: 0 0 6px #ff000055; }
+
+    /* Codex tooltip */
+    .mod-tag { position: relative; }
+    .codex-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 5px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #111;
+      border: 1px solid #444;
+      color: #ccc;
+      font-size: 9px;
+      line-height: 1.5;
+      padding: 6px 8px;
+      width: 180px;
+      z-index: 200;
+      pointer-events: none;
+      white-space: normal;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .mod-tag.codex-enabled:hover .codex-tooltip { display: block; }
+
+    /* Pause overlay */
+    #pause-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 150;
+    }
+    #pause-overlay.hidden { display: none; }
+    #pause-overlay-box {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 48px;
+      letter-spacing: 8px;
+      color: var(--accent);
+    }
+
+    /* Sloth timer bar */
+    #sloth-bar-wrap {
+      height: 6px; background: #111; border: 1px solid #333;
+      margin-bottom: 8px; display: none;
+    }
+    #sloth-bar-fill {
+      height: 100%; background: #e05c5c;
+      transition: width 0.2s linear;
+    }
+
+    /* ===================== MYSTERY BUTTON UI ===================== */
+    #mystery-btn-widget {
+      display: none;
+      position: fixed;
+      bottom: 18px;
+      left: 18px;
+      z-index: 60;
+    }
+    #mystery-btn-widget button {
+      background: var(--panel);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 13px;
+      letter-spacing: 3px;
+      padding: 6px 14px 4px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+    }
+    #mystery-btn-widget button:hover { background: var(--accent); color: #fff; }
+
+    #mystery-panel {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.88);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 110;
+    }
+    #mystery-panel.hidden { display: none; }
+    #mystery-panel-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 28px 32px;
+      width: 380px;
+      max-height: 90vh;
+      overflow-y: auto;
+      text-align: center;
+      position: relative;
+    }
+    #mystery-panel-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 28px;
+      letter-spacing: 5px;
+      color: var(--accent);
+      margin-bottom: 2px;
+    }
+    #mystery-panel-sub {
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    #mystery-panel-close {
+      position: absolute;
+      top: 10px; right: 14px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+      font-family: 'IBM Plex Mono', monospace;
+      text-transform: uppercase;
+      transition: color 0.12s;
+    }
+    #mystery-panel-close:hover { color: var(--text); }
+    #big-red-btn {
+      width: 110px;
+      height: 110px;
+      border-radius: 0;
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      box-shadow: none;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+      display: block;
+      margin: 0 auto 18px;
+    }
+    #big-red-btn:hover { background: #ff6f1a; border-color: #ff6f1a; }
+    #big-red-btn:active { background: #c04f00; border-color: #c04f00; }
+    #big-red-btn:disabled {
+      background: #333;
+      border-color: var(--border);
+      cursor: not-allowed;
+    }
+    #mystery-input-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    #mystery-input-label {
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+    #mystery-input-wrap input[type=number] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 4px 8px;
+      width: 90px;
+      text-align: center;
+      transition: border-color 0.12s;
+    }
+    #mystery-input-wrap input[type=number]:focus { outline: none; border-color: var(--accent); }
+
+    #mystery-upgrades-section {
+      border-top: 1px solid var(--border);
+      margin-top: 20px;
+      padding-top: 16px;
+      text-align: left;
+    }
+    #mystery-upgrades-section.hidden { display: none; }
+    .upgrade-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .upgrade-row:last-child { border-bottom: none; }
+    .upgrade-info { flex: 1; }
+    .upgrade-name {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 14px;
+      letter-spacing: 2px;
+      color: var(--accent);
+    }
+    .upgrade-name.super { color: #f59e0b; }
+    .upgrade-name.bought { color: var(--text-dim); }
+    .upgrade-desc { font-size: 9px; color: var(--text-dim); margin-top: 3px; line-height: 1.5; }
+    .upgrade-cost { font-size: 9px; color: var(--text-dim); font-weight: 700; white-space: nowrap; margin-top: 4px; letter-spacing: 1px; }
+    .upgrade-cost.super { color: #f59e0b; }
+    .upgrade-buy-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 13px;
+      letter-spacing: 1px;
+      padding: 4px 12px 2px;
+      cursor: pointer;
+      white-space: nowrap;
+      align-self: center;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .upgrade-buy-btn:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .upgrade-buy-btn:disabled { background: var(--bg); border-color: var(--border); color: #444; cursor: not-allowed; }
+    #mystery-money-display {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 14px;
+      letter-spacing: 2px;
+    }
+    #mystery-money-label {
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    #mystery-upgrades-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 16px;
+      letter-spacing: 4px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    /* ===================== END MYSTERY BUTTON UI ===================== */
+
+    @keyframes fakeX { 0%{opacity:1} 100%{opacity:0} }
+    @keyframes fakeNum { 0%{opacity:0} 100%{opacity:1} }
+    .fake-anim { position:relative; overflow:hidden; }
+    .fake-anim-x {
+      position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:12px; font-weight:700; color:#c0392b;
+      animation: fakeX 1.2s ease-out forwards;
+      pointer-events:none;
+    }
+    .fake-anim-num {
+      position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:12px; font-weight:700;
+      animation: fakeNum 1.2s ease-out forwards;
+      pointer-events:none;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>MY<span>SNEAKER</span></h1>
+  <div class="subtitle">Minesweeper</div>
+</header>
+
+<!-- MODIFIER OVERLAY -->
+<div id="mod-overlay" class="overlay hidden">
+  <div class="overlay-box">
+    <div class="overlay-title">Choose Your Modifier</div>
+    <div class="overlay-sub">Round <span id="overlay-round">1</span> — Pick one to begin</div>
+    <div class="modifier-cards" id="modifier-cards"></div>
+  </div>
+</div>
+
+<!-- PAUSE OVERLAY -->
+<div id="pause-overlay" class="hidden">
+  <div id="pause-overlay-box">⏸ PAUSED</div>
+</div>
+
+<!-- TOLL OVERLAY -->
+<div id="toll-overlay" class="overlay hidden">
+  <div class="overlay-box" style="max-width:760px;">
+    <!-- Toll Road section — always centered -->
+    <div id="toll-pay-section">
+      <div class="toll-title">⚠ TOLL ROAD ⚠</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">Every 3 rounds, you must pay the toll to continue</div>
+      <div class="toll-amount" id="toll-amount-display">10 ©</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:20px;">Your Credits: <span id="toll-credits-show" style="color:#f59e0b">0 ©</span></div>
+      <button id="toll-pay-btn" onclick="payToll()">Pay &amp; Continue</button>
+      <div id="toll-broke-msg" style="font-size:10px;color:#666;margin-top:8px;"></div>
+    </div>
+    <!-- Toll Shop section — shown below toll road before paying, hidden after paying -->
+    <div id="toll-shop-section" style="display:none;margin-top:24px;border-top:1px solid var(--border);padding-top:18px;">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:#f59e0b;margin-bottom:4px;">TOLL SHOP</div>
+      <div style="font-size:10px;letter-spacing:3px;color:var(--text-dim);text-transform:uppercase;margin-bottom:12px;">Buy a modifier with credits</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">Your Credits: <span id="toll-shop-credits" style="color:#f59e0b">0 ©</span></div>
+      <div class="modifier-cards" id="toll-shop-cards"></div>
+      <div id="toll-shop-msg" style="font-size:10px;color:#e05c5c;margin-top:10px;min-height:14px;"></div>
+    </div>
+  </div>
+</div>
+
+<div id="panel">
+  <div id="controls">
+    <button onclick="startNewRound()">New Game</button>
+    <span id="round-label" style="font-size:10px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;">Round 1</span>
+  </div>
+  <div id="active-mods"></div>
+  <div id="sloth-bar-wrap"><div id="sloth-bar-fill" style="width:100%"></div></div>
+  <div id="abilities-bar"></div>
+  <div id="hud">
+    <div class="hud-item">
+      <div class="hud-label">Mines</div>
+      <div class="hud-value" id="mineCount">10</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">Time</div>
+      <div class="hud-value" id="timer">0</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">Lives</div>
+      <div class="hud-value hearts" id="livesDisplay">❤❤❤</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">Credits</div>
+      <div class="hud-value credits" id="creditsDisplay">0 ©</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">Credit Mult</div>
+      <div class="hud-value" id="multDisplay">100%</div>
+    </div>
+    <div class="hud-item" style="display:none;">
+      <div class="hud-label">Rage</div>
+      <div class="hud-value" id="rageDisplay" style="color:#ef4444;">0%</div>
+    </div>
+  </div>
+  <div id="board"></div>
+  <div id="message"></div>
+  <div id="round-summary"></div>
+</div>
+
+<!-- VENTILATION UI -->
+<div id="ventilation-ui" style="display:none;position:fixed;top:12px;right:12px;background:var(--panel);border:1px solid var(--border);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;z-index:50;min-width:140px;">
+  <div style="letter-spacing:2px;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase;font-size:9px;">Ventilation</div>
+  <div style="display:flex;gap:6px;margin-bottom:6px;">
+    <button id="vent-heater" onclick="setVentMode('heater')" style="flex:1;font-size:10px;padding:3px 6px;cursor:pointer;background:#1a1a1a;border:1px solid #333;color:#f59e0b;font-family:inherit;">Heat</button>
+    <button id="vent-cooler" onclick="setVentMode('cooler')" style="flex:1;font-size:10px;padding:3px 6px;cursor:pointer;background:#1a1a1a;border:1px solid #333;color:#60a5fa;font-family:inherit;">Cool</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div id="vent-temp" style="font-size:16px;font-weight:700;min-width:40px;">70°</div>
+    <div style="flex:1;background:#111;height:8px;border:1px solid #333;border-radius:2px;">
+      <div id="vent-bar-fill" style="height:100%;width:35%;background:#2ecc71;transition:width 0.5s;"></div>
+    </div>
+  </div>
+  <div style="font-size:9px;color:var(--text-dim);margin-top:4px;">Safe: 1°–149°</div>
+</div>
+
+<!-- MYSTERY BUTTON WIDGET (bottom-left, appears round 10+) -->
+<div id="mystery-btn-widget">
+  <button onclick="openMysteryPanel()">X</button>
+</div>
+
+<!-- MYSTERY PANEL -->
+<div id="mystery-panel" class="hidden">
+  <div id="mystery-panel-box">
+    <span id="mystery-panel-close" onclick="closeMysteryPanel()">&#10005; CLOSE</span>
+    <div id="mystery-panel-title">Convert</div>
+    <button id="big-red-btn" onclick="pressBigRedBtn()"></button>
+    <div id="mystery-input-wrap">
+      <input type="number" id="mystery-amount" min="1" value="1" oninput="clampMysteryInput()">
+    </div>
+    <div id="mystery-upgrades-section" class="hidden">
+      <div id="mystery-money-label">Mystery Money</div>
+      <div id="mystery-money-display">0 $</div>
+      <div id="mystery-upgrades-title">Upgrades</div>
+      <div id="mystery-upgrades-list"></div>
+    </div>
+  </div>
+</div>
+
+<footer>Left click: reveal &nbsp;|&nbsp; Right click: flag &nbsp;|&nbsp; Lives protect you from mines &nbsp;|&nbsp; P: pause (if unlocked)</footer>
+
+<script>
+document.addEventListener('contextmenu', e => e.preventDefault());
+// =============================================
+// CONSTANTS & PERMANENT STATE
+// =============================================
+const BASE_ROWS = 9, BASE_COLS = 9, BASE_MINES = 10, BASE_REWARD = 10, TOLL_BASE = 10;
+
+let credits = 0;
+let roundNumber = 0;
+let maxLives = 3;
+
+// Permanent modifiers
+let perm = {
+  extraMinesPct: 0,
+  extraCreditsPct: 0,
+  boardBonus: 0,
+  largerBoardCount: 0,
+  riskRewardActive: false,
+  riskRewardSwap: null,
+  timelordActive: false,
+  taxCollectorLevel: 0,
+  largeMinesActive: false,
+  treasureCount: 0,
+  sneakersweepCount: 0,
+  // Permanent ability pools
+  permSneakersweeper: 0,
+  permBeer: 0,
+  permMineless: 0,
+  // New modifiers
+  speedsterActive: false,
+  decayActive: false,
+  enrageActive: false,
+  enrageCount: 0,
+  minelordLevel: 0,         // picks of Minelord's Favor
+  minelordDisabledTC: false,
+  tollDiscount: 0,          // % off toll
+  pawnShopActive: false,
+  pawnShopRemoveCost: 20,
+  fakeMineCount: 0,         // picks of Fake Mines
+  alertCount: 0,            // picks of Alert
+  wrongNumberCount: 0,      // picks of Wrong Number
+  scoutsCount: 0,           // picks of Scouts (max 10)
+  ventilationActive: false,
+  ventilationTemp: 70,
+  ventilationMode: null,    // null | 'heater' | 'cooler'
+  // New modifiers
+  lieMinesActive: false,        // Lie Mines
+  colorNumberActive: false,     // Color Number (one-round, set per round)
+  colorblindActive: false,      // Colorblind (one-time)
+  narratorActive: false,        // Narrator (one-time)
+  greedActive: false,           // Greed (sin)
+  gluttonyActive: false,        // Gluttony (sin)
+  slothActive: false,           // Sloth (sin)
+  devilsFavorActive: false,     // Devil's Favor (secret)
+  codexActive: false,           // Codex (one-time)
+  pauseButtonActive: false,     // Pause Button (one-time)
+  tollShopActive: false,        // Toll Shop (one-time)
+  // New modifiers
+  claymoreCount: 0,             // picks of Claymore
+  wrathActive: false,           // Wrath (sin, one-time)
+  rage: 0,                      // Rage stat (0–100)
+  fogOfWarCount: 0,             // picks of Fog of War
+  curseTollPct: 0,              // total toll % increase from curses
+  curseMinesPct: 0,             // total mine % increase from war curses
+  curseHeatDrift: 0,            // extra heat drift per second
+  curseColdDrift: 0,            // extra cold drift per second
+};
+
+let chosenHistory = [];     // list of all chosen modifier keys (allows repeats for stackable ones)
+
+// ONE-TIME modifiers (can only be chosen once ever)
+const ONE_TIME = new Set([
+  'riskReward','timelord','largeMines','speedster','decay','enrage',
+  'friendOfToll','pawnShop','ventilation','colorblind','narrator',
+  'devilsFavor','codex','pauseButton','tollShop'
+]);
+
+// ONE-ROUND modifier keys (active only the round they're picked, can appear again)
+const ONE_ROUND = new Set(['timeless','lessIsMore','sonar','colorNumber']);
+
+// SECRET modifiers — never appear in the selector
+const SECRET_MODS = new Set(['devilsFavor']);
+
+// Active one-round modifiers for current round
+let activeOneRound = new Set();
+
+// Round-volatile state
+let roundAbilities = { sonar:0, sneakersweeper:0, beer:0, mineless:0 };
+let abilityMode = null;
+
+// Round stats
+let minesHit = 0, treasureFound = 0;
+let timelordPenalty = 0;
+let sonarPenalty = 0;
+let beerWastedPenalty = 0;
+let minelessUsed = false;
+let roundCreditMult = 0;      // extra % added for this round only (enrage stacking, etc.)
+let enrageRoundBonus = 0;     // % this round from enrage
+let minelordTilesPenalty = 0; // count of regular tiles clicked this round
+let alertUsesLeft = 0;        // resets each round
+let wrongNumberTiles = [];    // [r,c] of wrong-number tiles this round
+let fakeMines = [];           // [{r,c}] of fake mine tiles this round
+let decayPenaltyTimer = 0;    // seconds since last decay life loss
+let speedMult = 1;            // timer tick multiplier (speedster = 2)
+let timelessFailed = false;
+let scoutTiles = [];          // [{r,c}] pre-revealed before first click
+let alertPendingTile = null;  // {r,c} tile waiting for confirm click after alert
+let fakeMineAnimTiles = {};   // "r,c" -> {num, startTime} for X-to-number fade
+
+// New round-volatile state
+let lieMines = [];            // [{r,c}] — tiles that look like mines but are empty
+let colorNumberRound = false; // true if Color Number active this round
+let slothTimer = 3;           // countdown seconds
+let slothActive = false;      // timer running
+let slothInterval = null;
+let isPaused = false;         // Pause Button state
+let gluttonyTriggered = false; // Gluttony: tracked per round
+let claymores = [];           // [{r,c}] claymore tiles this round
+let wrathTileCount = 0;       // tiles revealed this round (for rage tracking)
+let fogRevealedThisRound = false; // has first click happened (fog activates)
+
+// Board
+let rows, cols, totalMines;
+let board, revealed, flagged, sonarBeacons, treasureTiles;
+let gameOver, gameWon, firstClick, minesPlaced, seconds;
+let timerInterval;
+let currentLives;
+
+// Toll
+let tollAmount = 0;
+
+// =============================================
+// MODIFIER DEFINITIONS
+// =============================================
+const MODS = {
+  noMansLand: {
+    name:"No Man's Land", rarity:'rare',
+    desc:"+50% mines permanently. +15% credits permanently.",
+    onPick(){ perm.extraMinesPct+=50; perm.extraCreditsPct+=15; }
+  },
+  sonar: {
+    name:"Sonar", rarity:'oneround',
+    desc:"Gain 3 Sonar abilities this round only. Place a sonar beacon — reveals all mines within 4-tile radius. Each use: -5% credits this round.",
+    onPick(){ roundAbilities.sonar+=3; }
+  },
+  riskReward: {
+    name:"Risk & Reward", rarity:'once',
+    desc:"Each round randomly swaps 1↔2 or 3↔4 displayed numbers. +20% credits permanently. One-time.",
+    onPick(){ perm.riskRewardActive=true; perm.extraCreditsPct+=20; rollRnR(); }
+  },
+  treasure: {
+    name:"Treasure", rarity:'common',
+    desc:"25% chance per pick for a hidden Treasure tile each round. Stack for more tiles. Finding one reveals a T and gives +5% credits. Hitting a mine removes a tile.",
+    onPick(){ perm.treasureCount+=1; }
+  },
+  timelord: {
+    name:"Timelord", rarity:'once',
+    desc:"+50% credits permanently. Every 15s: -7% this round. Every 400s: additional -50% on top. Can go negative. One-time.",
+    onPick(){ perm.timelordActive=true; perm.extraCreditsPct+=50; }
+  },
+  taxCollector: {
+    name:"Tax Collector", rarity:'common',
+    desc:"Each mine hit: +taxLevel% credits. Tax level increases by 1 per pick.",
+    onPick(){ perm.taxCollectorLevel+=1; }
+  },
+  lifeIncrease: {
+    name:"Life Increase", rarity:'rare',
+    desc:"+1 max life. Rarer modifier.",
+    onPick(){ maxLives+=1; }
+  },
+  largerBoard: {
+    name:"Larger Board", rarity:'common',
+    desc:"+1 board size permanently. Mines: +10% on first pick, +5% each extra pick, +10% bonus every 3rd pick. +5% credits.",
+    onPick(){
+      perm.boardBonus+=1;
+      perm.largerBoardCount+=1;
+      const n = perm.largerBoardCount;
+      let minePct = 10 + (n - 1) * 5;
+      if(n % 3 === 0) minePct += 10;
+      perm.extraMinesPct += minePct;
+      perm.extraCreditsPct+=5;
+    }
+  },
+  largeMines: {
+    name:"Large Mines", rarity:'once',
+    desc:"Hitting a mine reveals adjacent safe tiles (still deals 1 damage). -10% credits permanently. One-time.",
+    onPick(){ perm.largeMinesActive=true; perm.extraCreditsPct-=10; }
+  },
+  sneakersweeper: {
+    name:"Sneakersweeper", rarity:'common',
+    desc:"+1 Sneakersweeper ability: reveals entire row, no mine damage. Carries over each round. -3% credits permanently per pick.",
+    onPick(){ perm.permSneakersweeper+=1; roundAbilities.sneakersweeper+=1; perm.extraCreditsPct-=3; }
+  },
+  beer: {
+    name:"Beer", rarity:'common',
+    desc:"+1 Beer Can: next tile click is shielded from mine damage. Carries over each round. If the tile isn't a mine, -5% credits this round.",
+    onPick(){ perm.permBeer+=1; roundAbilities.beer+=1; }
+  },
+  mineless: {
+    name:"Mineless", rarity:'rare',
+    desc:"+1 Mineless ability: removes 90% of mines from the board (numbers adjusted). Carries over each round. -95% credits this round.",
+    onPick(){ perm.permMineless+=1; roundAbilities.mineless+=1; }
+  },
+  timeless: {
+    name:"Timeless", rarity:'oneround',
+    desc:"Complete this round in 40s or you lose it. +100% credits this round. One-Round.",
+    onPick(){ activeOneRound.add('timeless'); }
+  },
+  lessIsMore: {
+    name:"Less Is More", rarity:'oneround',
+    desc:"Clicks reveal only 1 tile at a time (no chain reveals). +20% credits this round. One-Round.",
+    onPick(){ activeOneRound.add('lessIsMore'); }
+  },
+  speedster: {
+    name:"Speedster", rarity:'once',
+    desc:"Time passes 2× faster. +10% credits permanently. One-time.",
+    onPick(){ perm.speedsterActive=true; speedMult=2; perm.extraCreditsPct+=10; }
+  },
+  decay: {
+    name:"Decay", rarity:'once',
+    desc:"Every 100s: lose 1 life. +50% credits permanently. One-time.",
+    onPick(){ perm.decayActive=true; perm.extraCreditsPct+=50; }
+  },
+  enrage: {
+    name:"Enrage", rarity:'once',
+    desc:"Every life lost: +5% credits this round, time +20% faster, 1 mine revealed. +0% permanent (stacks per life lost). One-time.",
+    onPick(){ perm.enrageActive=true; perm.enrageCount=0; }
+  },
+  minelordsFavor: {
+    name:"Minelord's Favor", rarity:'rare',
+    desc:"Every regular tile: -1% credits this round. Every mine hit: +(3+extra)% credits this round. Disables & removes Tax Collector permanently.",
+    onPick(){
+      perm.minelordLevel+=1;
+      if(!perm.minelordDisabledTC && perm.taxCollectorLevel>0) {
+        perm.minelordDisabledTC=true;
+        perm.taxCollectorLevel=0;
+      }
+    }
+  },
+  friendOfToll: {
+    name:"Friend of the Toll Guy", rarity:'once',
+    desc:"Toll Road cost -15% permanently. +10 mines permanently. One-time.",
+    onPick(){ perm.tollDiscount+=15; perm.extraMinesPct+=Math.round(10/BASE_MINES*100); }
+  },
+  pawnShop: {
+    name:"Pawn Shop", rarity:'once',
+    desc:"Remove any modifier tag for 50© (+20% each removal). One-time.",
+    onPick(){ perm.pawnShopActive=true; }
+  },
+  fakeMinesmod: {
+    name:"Fake Mines", rarity:'common',
+    desc:"20% chance per pick to replace safe tiles with fake mines. Fake mines: -5% credits, removed from mine count when revealed. +5% credits permanently (+4% per extra pick).",
+    onPick(){
+      const picks=perm.fakeMineCount+1;
+      perm.extraCreditsPct += picks===1?5:4;
+      perm.fakeMineCount+=1;
+    }
+  },
+  alert: {
+    name:"Alert", rarity:'common',
+    desc:"+1 use per round: auto-alerts you when you click a tile adjacent (not diagonal) to a mine. Stacks per pick.",
+    onPick(){ perm.alertCount+=1; }
+  },
+  wrongNumber: {
+    name:"Wrong Number", rarity:'common',
+    desc:"1 random number tile (+1 per pick) shows +1 higher than real. +5% credits permanently (+5% per extra pick).",
+    onPick(){
+      const picks=perm.wrongNumberCount+1;
+      perm.extraCreditsPct+=5*picks;
+      perm.wrongNumberCount+=1;
+    }
+  },
+  scouts: {
+    name:"Scouts", rarity:'common',
+    desc:"1 safe tile (+1 per pick) is revealed at round start. Disappears after 10 picks.",
+    onPick(){
+      perm.scoutsCount=Math.min(perm.scoutsCount+1,10);
+    }
+  },
+  ventilation: {
+    name:"Ventilation", rarity:'once',
+    desc:"Adds a temp system. Stay between 1–149°. At 0° or 150°+: lose 1 max life every 3s. Heater/cooler keep temp in range. Start at 70°. +20% credits permanently. One-time.",
+    onPick(){ perm.ventilationActive=true; perm.ventilationTemp=70; perm.ventilationMode=null; perm.extraCreditsPct+=20; }
+  },
+  lieMinesmod: {
+    name:"Lie Mines", rarity:'common',
+    desc:"Some safe tiles look and count like real mines. Revealing them counts toward winning the round — but you'll get no warning.",
+    onPick(){ perm.lieMinesActive=true; }
+  },
+  colorNumber: {
+    name:"Color Number", rarity:'oneround',
+    desc:"Number tiles hide their digit and show only their color instead. +30% credits this round. One-Round.",
+    onPick(){ activeOneRound.add('colorNumber'); colorNumberRound=true; }
+  },
+  colorblind: {
+    name:"Colorblind", rarity:'once',
+    desc:"All color is stripped — everything is black, gray, or white. +15% credits permanently. One-time.",
+    onPick(){ perm.colorblindActive=true; perm.extraCreditsPct+=15; document.body.classList.add('colorblind-mode'); }
+  },
+  narrator: {
+    name:"Narrator", rarity:'once',
+    desc:"A TTS voice narrates everything. One-time.",
+    onPick(){ perm.narratorActive=true; narratorSpeak('Narrator activated. Everything will be narrated from now on.'); }
+  },
+  greed: {
+    name:"Greed", rarity:'sin',
+    desc:"-20% credits permanently. A sin modifier. If you collect all 3 Sins, they combine into a secret modifier. One-time.",
+    sinTag: true,
+    onPick(){ perm.greedActive=true; perm.extraCreditsPct-=20; checkDevilsFavor(); }
+  },
+  gluttony: {
+    name:"Gluttony", rarity:'sin',
+    desc:"Reaching 1 Life costs 50% of your current credit multiplier permanently. A sin modifier. One-time.",
+    sinTag: true,
+    onPick(){ perm.gluttonyActive=true; checkDevilsFavor(); }
+  },
+  sloth: {
+    name:"Sloth", rarity:'sin',
+    desc:"A 3-second tile timer starts on your first click each round. Let it expire: lose 1 life, timer resets. Clicking resets it. Pauses between rounds. A sin modifier. One-time.",
+    sinTag: true,
+    onPick(){ perm.slothActive=true; checkDevilsFavor(); }
+  },
+  devilsFavor: {
+    name:"Devil's Favor", rarity:'once',
+    desc:"+200% credits permanently. Hitting a mine has a 35% chance to deny damage. Secret modifier.",
+    sinTag: false,
+    onPick(){ perm.devilsFavorActive=true; perm.extraCreditsPct+=200; }
+  },
+  codex: {
+    name:"Codex", rarity:'once',
+    desc:"Hover over modifier tags to see their description. One-time.",
+    onPick(){ perm.codexActive=true; renderModTags(); }
+  },
+  pauseButton: {
+    name:"Pause Button", rarity:'once',
+    desc:"Press P to pause the timer and everything. Can only pause after your first click, and not when the round is over. One-time.",
+    onPick(){ perm.pauseButtonActive=true; }
+  },
+  tollShop: {
+    name:"Toll Shop", rarity:'once',
+    desc:"Adds a shop in the Toll Road. After paying the toll, you can buy extra modifiers using Credits. Common: 10© + 50% of toll. Rare: 25© + 50% of toll. One-Time mod: 25© + 45% of toll. -10% Credits permanently. One-time.",
+    onPick(){ perm.tollShopActive=true; perm.extraCreditsPct-=10; }
+  },
+  scrap: {
+    name:"Scrap", rarity:'common',
+    desc:"Immediately grants 3 credits.",
+    noTag: true,
+    onPick(){ credits+=3; updateHUD(); }
+  },
+  claymore: {
+    name:"Claymore", rarity:'common',
+    desc:"Replaces 1 mine (+1 per pick) with a Claymore. Clicking diagonally adjacent to it reveals it and deals 1 life. +10% credits permanently (+10% per pick).",
+    onPick(){
+      perm.claymoreCount+=1;
+      perm.extraCreditsPct += perm.claymoreCount * 10;
+    }
+  },
+  wrath: {
+    name:"Wrath", rarity:'sin',
+    desc:"Every 2 tiles revealed: +1% Rage. Each second, there's a Rage% chance a random unrevealed tile reveals itself. One-time. (Does not count toward Devil's Favor.)",
+    sinTag: true,
+    noDevil: true,
+    onPick(){ perm.wrathActive=true; perm.rage=0; }
+  },
+  fogOfWar: {
+    name:"Fog of War", rarity:'common',
+    desc:"After your first click, only tiles within 6 tiles (-1 per pick, min 3) of a revealed tile are visible. +5% credits permanently (+5% per pick).",
+    onPick(){
+      perm.fogOfWarCount+=1;
+      perm.extraCreditsPct+=5*perm.fogOfWarCount;
+    }
+  },
+  curseOfCapitalism: {
+    name:"Curse of Capitalism", rarity:'common',
+    desc:"Toll cost +1% more per pick. Stackable.",
+    onPick(){ perm.curseTollPct+=1; }
+  },
+  curseOfWar: {
+    name:"Curse of War", rarity:'rare',
+    desc:"+1% more mines per pick. Stackable.",
+    onPick(){ perm.curseMinesPct+=1; perm.extraMinesPct+=1; }
+  },
+  curseOfHell: {
+    name:"Curse of Hell", rarity:'common',
+    desc:"+0.1° natural heating drift per pick. Stackable.",
+    onPick(){ perm.curseHeatDrift+=0.1; }
+  },
+  curseOfTundra: {
+    name:"Curse of Tundra", rarity:'common',
+    desc:"+0.1° natural cooling drift per pick. Stackable.",
+    onPick(){ perm.curseColdDrift+=0.1; }
+  },
+  curseOfDestitute: {
+    name:"Curse of Destitute", rarity:'common',
+    desc:"-1% Credits permanently per pick. Stackable.",
+    onPick(){ perm.extraCreditsPct-=1; }
+  },
+  demonicCurseOfDestitute: {
+    name:"Demonic Curse of Destitute", rarity:'rare',
+    desc:"-5% Credits permanently per pick. Stackable.",
+    onPick(){ perm.extraCreditsPct-=5; }
+  },
+  demonicCurseOfCapitalism: {
+    name:"Demonic Curse of Capitalism", rarity:'rare',
+    desc:"Toll cost +5% more per pick. Stackable.",
+    onPick(){ perm.curseTollPct+=5; }
+  },
+  abysmalCurseOfCapitalism: {
+    name:"Abysmal Curse of Capitalism", rarity:'rare',
+    desc:"Toll cost +10% more per pick. Stackable.",
+    onPick(){ perm.curseTollPct+=10; }
+  },
+};
+
+function triggerLifeLoss() {
+  if(gameOver||gameWon) return;
+  currentLives--;
+  if(perm.enrageActive) {
+    enrageRoundBonus+=5;
+    speedMult = (perm.speedsterActive?2:1) + Math.floor(enrageRoundBonus/5)*0.2;
+    const hiddenMines=[];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+      if(board[r][c]===-1&&!revealed[r][c]) hiddenMines.push([r,c]);
+    }
+    if(hiddenMines.length>0) {
+      const [mr,mc]=hiddenMines[Math.floor(Math.random()*hiddenMines.length)];
+      revealed[mr][mc]=true;
+      const mineCountEl=document.getElementById('mineCount');
+      mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+      render();
+    }
+  }
+  const hEl=document.getElementById('livesDisplay');
+  hEl.classList.remove('bounce'); void hEl.offsetWidth; hEl.classList.add('bounce');
+  if(currentLives<=0) { endGame(false); return; }
+  if(perm.narratorActive) narratorSpeak('Life lost. ' + currentLives + ' remaining.');
+  updateHUD();
+}
+
+function rollRnR() {
+  perm.riskRewardSwap = Math.random()<0.5 ? '12' : '34';
+}
+
+// =============================================
+// TOLL SYSTEM
+// =============================================
+function getTollCost(cycle) {
+  let cost = TOLL_BASE;
+  for(let i=0;i<cycle;i++) cost = Math.ceil(cost*1.5);
+  if(perm.tollDiscount>0) cost = Math.max(1, Math.ceil(cost * (1 - perm.tollDiscount/100)));
+  if(perm.curseTollPct>0) cost = Math.ceil(cost * (1 + perm.curseTollPct/100));
+  if(mysteryNextTollHalf) { cost = Math.max(1, Math.ceil(cost * 0.5)); mysteryNextTollHalf = false; }
+  return cost;
+}
+
+function checkAndShowToll(afterCallback) {
+  // Toll every 3 rounds (after round 3, 6, 9...)
+  const cyclesDue = Math.floor((roundNumber) / 3);
+  const cyclesPaid = Math.floor((roundNumber-1) / 3);
+  if(cyclesDue > cyclesPaid) {
+    tollAmount = getTollCost(cyclesPaid);
+    document.getElementById('toll-amount-display').textContent = tollAmount+' ©';
+    document.getElementById('toll-credits-show').textContent = Math.floor(credits)+' ©';
+    const btn = document.getElementById('toll-pay-btn');
+    const msg = document.getElementById('toll-broke-msg');
+    if(credits >= tollAmount) {
+      btn.disabled = false;
+      msg.textContent = '';
+    } else {
+      btn.disabled = false;
+      msg.textContent = "Can't afford — credits will go negative.";
+    }
+    // Store callback
+    window._tollCallback = afterCallback;
+    // If Toll Shop is active, populate and show the shop section below the toll road
+    if(perm.tollShopActive) {
+      populateTollShop();
+      document.getElementById('toll-shop-section').style.display = 'block';
+    } else {
+      document.getElementById('toll-shop-section').style.display = 'none';
+    }
+    document.getElementById('toll-overlay').classList.remove('hidden');
+    return true;
+  }
+  return false;
+}
+
+function payToll() {
+  credits -= tollAmount;
+  updateHUD();
+  if(credits < 0) {
+    document.getElementById('toll-overlay').classList.add('hidden');
+    document.getElementById('toll-shop-section').style.display = 'none';
+    const msg = document.getElementById('message');
+    msg.textContent = 'BANKRUPT. Game Over.';
+    msg.className = 'lose';
+    document.getElementById('round-summary').innerHTML =
+      "<span style='color:#c0392b;font-weight:700;letter-spacing:2px;'>Could not afford the toll — run ended.</span>";
+    gameOver = true; gameWon = false;
+    permanentGameOver();
+    return;
+  }
+  // Hide the toll road section and the shop, close overlay, continue
+  document.getElementById('toll-overlay').classList.add('hidden');
+  document.getElementById('toll-shop-section').style.display = 'none';
+  if(window._tollCallback) window._tollCallback();
+}
+
+// =============================================
+// TOLL SHOP
+// =============================================
+
+function getTollShopPrice(rarity) {
+  // tollAmount is the toll that was just paid this cycle
+  const base = tollAmount;
+  let price;
+  if(rarity === 'common')   price = Math.ceil(10  + base * 0.50);
+  else if(rarity === 'rare')     price = Math.ceil(25  + base * 0.50);
+  else if(rarity === 'once')     price = Math.ceil(25  + base * 0.45);
+  else price = Math.ceil(10 + base * 0.50);
+  if(mysteryInfiniteCoupon) price = Math.max(1, Math.ceil(price * 0.80));
+  return price;
+}
+
+function populateTollShop() {
+  // Pick 3 shop options — no one-round mods, no sin mods
+  const available = Object.keys(MODS).filter(k => {
+    if(SECRET_MODS.has(k)) return false;
+    if(ONE_ROUND.has(k)) return false;
+    if(ONE_TIME.has(k)) return false;
+    if(MODS[k].rarity === 'sin') return false;
+    if(MODS[k].rarity === 'oneround') return false;
+    if(MODS[k].rarity === 'once') return false;
+    if(k === 'taxCollector' && perm.minelordDisabledTC) return false;
+    if(k === 'scouts' && perm.scoutsCount >= 10) return false;
+    if(k === 'fogOfWar' && perm.fogOfWarCount >= 4) return false;
+    if(MODS[k].rarity === 'sin' && perm.devilsFavorActive) return false;
+    return true;
+  });
+  const weighted = available.map(k => ({
+    k, w: MODS[k].rarity==='rare' ? 0.3
+        : MODS[k].rarity==='once' ? 0.5
+        : 1
+  }));
+  const chosen = [];
+  const pool = [...weighted];
+  for(let i=0;i<Math.min(3,pool.length);i++) {
+    const total = pool.reduce((s,x)=>s+x.w,0);
+    let rv = Math.random()*total;
+    let idx=0;
+    for(;idx<pool.length;idx++){ rv-=pool[idx].w; if(rv<=0) break; }
+    idx=Math.min(idx,pool.length-1);
+    chosen.push(pool[idx].k);
+    pool.splice(idx,1);
+  }
+
+  const cont = document.getElementById('toll-shop-cards');
+  cont.innerHTML = '';
+  document.getElementById('toll-shop-credits').textContent = Math.floor(credits)+' ©';
+  document.getElementById('toll-shop-msg').textContent = '';
+
+  chosen.forEach(k => {
+    const m = MODS[k];
+    const price = getTollShopPrice(m.rarity);
+    const rarityClass = m.rarity==='rare' ? 'rare' : '';
+    const rarityLabel = m.rarity==='rare' ? '★ RARE' : 'COMMON';
+    const d = document.createElement('div');
+    d.className = 'mod-card';
+    d.innerHTML = `
+      <div class="mod-card-name ${rarityClass}">${m.name}</div>
+      <div class="mod-card-desc">${m.desc}</div>
+      <div class="mod-card-rarity ${rarityClass}">${rarityLabel}</div>
+      <div style="margin-top:8px;font-size:11px;color:#f59e0b;font-weight:700;">${price} ©</div>
+    `;
+    d.onclick = () => buyTollShopMod(k, price, d);
+    cont.appendChild(d);
+  });
+}
+
+function buyTollShopMod(k, price, cardEl) {
+  if(credits < price) {
+    document.getElementById('toll-shop-msg').textContent = `Not enough credits! Need ${price}©.`;
+    return;
+  }
+  credits -= price;
+  updateHUD();
+  document.getElementById('toll-shop-credits').textContent = Math.floor(credits)+' ©';
+  document.getElementById('toll-shop-msg').textContent = 'Bought: ' + MODS[k].name + '!';
+  // Remove just this card from the shop
+  if(cardEl) cardEl.remove();
+  if(!ONE_ROUND.has(k) && !MODS[k].noTag) chosenHistory.push(k);
+  MODS[k].onPick();
+  if(perm.narratorActive) narratorSpeak('Toll Shop: You bought ' + MODS[k].name + '.');
+}
+
+function closeTollShop() {
+  document.getElementById('toll-overlay').classList.add('hidden');
+  document.getElementById('toll-shop-section').style.display = 'none';
+  if(window._tollCallback) window._tollCallback();
+}
+
+
+function pickModOptions(n) {
+  const available = Object.keys(MODS).filter(k => {
+    if(SECRET_MODS.has(k)) return false;          // never show secret mods
+    if(ONE_TIME.has(k) && chosenHistory.includes(k)) return false;
+    if(MODS[k].rarity==='sin' && chosenHistory.includes(k)) return false; // sins are one-time like 'once'
+    if(k==='taxCollector' && perm.minelordDisabledTC) return false;
+    if(k==='scouts' && perm.scoutsCount>=10) return false;
+    if(k==='fogOfWar' && perm.fogOfWarCount>=4) return false; // radius hits min of 3 at 4 picks
+    // Sin mods: hide if Devil's Favor already active
+    if(MODS[k].rarity==='sin' && perm.devilsFavorActive) return false;
+    return true;
+  });
+  // Weighted pool
+  const weighted = available.map(k => ({
+    k, w: MODS[k].rarity==='rare' ? 0.3
+        : MODS[k].rarity==='once' ? 0.5
+        : MODS[k].rarity==='sin' ? 0.3
+        : MODS[k].rarity==='oneround' ? 0.5
+        : 1   // common
+  }));
+  const chosen = [];
+  const pool = [...weighted];
+  for(let i=0;i<Math.min(n,pool.length);i++) {
+    const total = pool.reduce((s,x)=>s+x.w,0);
+    let r = Math.random()*total;
+    let idx=0;
+    for(;idx<pool.length;idx++){ r-=pool[idx].w; if(r<=0) break; }
+    idx=Math.min(idx,pool.length-1);
+    chosen.push(pool[idx].k);
+    pool.splice(idx,1);
+  }
+  return chosen;
+}
+
+function showModifierOverlay() {
+  const opts = pickModOptions(3);
+  const cont = document.getElementById('modifier-cards');
+  cont.innerHTML='';
+  document.getElementById('overlay-round').textContent = roundNumber;
+  opts.forEach(k=>{
+    const m=MODS[k];
+    const isSin = m.rarity === 'sin';
+    const rarityClass = isSin ? 'sin-card'
+      : m.rarity==='rare' ? 'rare'
+      : m.rarity==='once' ? 'once'
+      : m.rarity==='oneround' ? 'oneround' : '';
+    const rarityLabel = isSin ? '☠ SIN'
+      : m.rarity==='rare' ? '★ RARE'
+      : m.rarity==='once' ? '⚑ ONE-TIME'
+      : m.rarity==='oneround' ? '◈ ONE-ROUND' : 'COMMON';
+    const d=document.createElement('div');
+    d.className='mod-card';
+    d.innerHTML=`
+      <div class="mod-card-name ${rarityClass}" style="${isSin?'color:#ef4444':''}">${m.name}</div>
+      <div class="mod-card-desc">${m.desc}</div>
+      <div class="mod-card-rarity ${rarityClass}" style="${isSin?'color:#ef4444':''}">${rarityLabel}</div>
+    `;
+    d.onclick=()=>selectMod(k);
+    cont.appendChild(d);
+  });
+  document.getElementById('mod-overlay').classList.remove('hidden');
+  if(perm.narratorActive) narratorSpeak('Round ' + roundNumber + '. Choose your modifier.');
+}
+
+function selectMod(k) {
+  document.getElementById('mod-overlay').classList.add('hidden');
+  // One-round mods don't go into permanent chosenHistory
+  // noTag mods (Scrap) don't add a tag
+  // Secret mods also skip chosenHistory (they're added programmatically)
+  if(!ONE_ROUND.has(k) && !MODS[k].noTag) chosenHistory.push(k);
+  MODS[k].onPick();
+  if(perm.narratorActive) narratorSpeak('You selected ' + MODS[k].name + '. ' + MODS[k].desc);
+  beginRound();
+}
+
+// =============================================
+// ROUND START
+// =============================================
+function startNewRound() {
+  activeOneRound = new Set();
+  roundAbilities = {
+    sonar: 0,
+    sneakersweeper: roundAbilities.sneakersweeper,
+    beer: roundAbilities.beer,
+    mineless: roundAbilities.mineless,
+  };
+  abilityMode = null;
+  minesHit=0; treasureFound=0; timelordPenalty=0; sonarPenalty=0;
+  beerWastedPenalty=0; minelessUsed=false;
+  roundCreditMult=0; enrageRoundBonus=0; minelordTilesPenalty=0;
+  alertUsesLeft=perm.alertCount;
+  wrongNumberTiles=[]; fakeMines=[];
+  decayPenaltyTimer=0; timelessFailed=false; scoutTiles=[]; alertPendingTile=null; fakeMineAnimTiles={};
+  speedMult = perm.speedsterActive ? 2 : 1;
+  // New round state
+  lieMines = [];
+  colorNumberRound = false;
+  gluttonyTriggered = false;
+  claymores = [];
+  wrathTileCount = 0; // unused but kept for safety
+  if(perm.wrathActive) perm.rage = 0;
+  fogRevealedThisRound = false;
+  // Ventilation: reset temp to 70 every round
+  if(perm.ventilationActive) { perm.ventilationTemp = 70; perm.ventilationMode = null; }
+  // Stop sloth timer between rounds
+  stopSlothTimer();
+  slothTimer = 3;
+  // Unpause if paused
+  if(isPaused) unpause();
+
+  roundNumber++;
+  showMysteryWidgetIfReady();
+
+  if(!checkAndShowToll(showModifierOverlay)) {
+    showModifierOverlay();
+  }
+}
+
+function beginRound() {
+  clearInterval(timerInterval);
+
+  if(perm.riskRewardActive) rollRnR();
+
+  rows = BASE_ROWS + perm.boardBonus;
+  cols = BASE_COLS + perm.boardBonus;
+  const mineMult = 1 + perm.extraMinesPct/100;
+  totalMines = Math.min(Math.round(BASE_MINES * mineMult), Math.floor(rows*cols*0.8));
+
+  board    = Array.from({length:rows}, ()=>Array(cols).fill(0));
+  revealed = Array.from({length:rows}, ()=>Array(cols).fill(false));
+  flagged  = Array.from({length:rows}, ()=>Array(cols).fill(false));
+  sonarBeacons = Array.from({length:rows}, ()=>Array(cols).fill(false));
+  treasureTiles = [];
+  fakeMines = [];
+  wrongNumberTiles = [];
+
+  gameOver=false; gameWon=false; firstClick=true; minesPlaced=false; seconds=0;
+  currentLives=maxLives;
+  timelessFailed=false;
+
+  document.getElementById('mineCount').textContent=totalMines;
+  document.getElementById('timer').textContent='0';
+  document.getElementById('round-label').textContent='Round '+roundNumber;
+  const msg=document.getElementById('message');
+  msg.textContent=''; msg.className='';
+  document.getElementById('round-summary').textContent='';
+
+  updateHUD();
+  renderModTags();
+  renderAbilities();
+  renderVentilation();
+
+  // Scouts: place mines now so we can reveal real safe tiles before the first click.
+  // Timer doesn't start until the player actually clicks (firstClick stays true).
+  scoutTiles = [];
+  if(perm.scoutsCount > 0) {
+    const safeR = Math.floor(rows/2), safeC = Math.floor(cols/2);
+    placeMines(safeR, safeC);
+    minesPlaced = true;
+    // Pick safe tiles and reveal them
+    const safeTiles = [];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+      if(board[r][c]!==-1 && !treasureTiles.find(p=>p.r===r&&p.c===c)
+        && !fakeMines.find(p=>p.r===r&&p.c===c)) {
+        safeTiles.push([r,c]);
+      }
+    }
+    safeTiles.sort(()=>Math.random()-0.5);
+    const toReveal = Math.min(perm.scoutsCount, safeTiles.length);
+    for(let i=0;i<toReveal;i++) {
+      const [r,c] = safeTiles[i];
+      revealed[r][c] = true;
+      scoutTiles.push({r,c});
+    }
+    document.getElementById('mineCount').textContent = totalMines + fakeMines.length;
+  }
+
+  render();
+}
+
+// =============================================
+// MINE PLACEMENT
+// =============================================
+function placeMines(safeR, safeC) {
+  let placed=0, tries=0;
+  while(placed<totalMines && tries<20000) {
+    tries++;
+    const r=Math.floor(Math.random()*rows), c=Math.floor(Math.random()*cols);
+    if(board[r][c]===-1) continue;
+    if(Math.abs(r-safeR)<=1 && Math.abs(c-safeC)<=1) continue;
+    board[r][c]=-1; placed++;
+  }
+  recalcNumbers();
+
+  // Fake mines: replace safe non-number-zero tiles
+  if(perm.fakeMineCount>0) {
+    const candidates=[];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+      if(board[r][c]>0 && !treasureTiles.find(p=>p.r===r&&p.c===c)) candidates.push([r,c]);
+    }
+    candidates.sort(()=>Math.random()-0.5);
+    let toPlace = Math.floor(candidates.length * 0.2 * perm.fakeMineCount);
+    toPlace = Math.min(toPlace, candidates.length);
+    for(let i=0;i<toPlace;i++) {
+      fakeMines.push({r:candidates[i][0], c:candidates[i][1]});
+    }
+    // Add fake mines to displayed count
+    const mineCountEl=document.getElementById('mineCount');
+    mineCountEl.textContent = parseInt(mineCountEl.textContent) + fakeMines.length;
+  }
+
+  // Wrong Number: randomly pick tiles with numbers > 0 and inflate display by 1
+  if(perm.wrongNumberCount>0) {
+    const numTiles=[];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+      if(board[r][c]>0) numTiles.push([r,c]);
+    }
+    numTiles.sort(()=>Math.random()-0.5);
+    wrongNumberTiles = numTiles.slice(0, perm.wrongNumberCount).map(([r,c])=>({r,c}));
+  }
+
+  placeTreasures();
+
+  // Lie Mines: pick empty (0) tiles and mark them as lie mines (look like real mines to the display)
+  lieMines = [];
+  if(perm.lieMinesActive) {
+    const emptyTiles = [];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+      if(board[r][c]===0 && !treasureTiles.find(p=>p.r===r&&p.c===c)) emptyTiles.push([r,c]);
+    }
+    emptyTiles.sort(()=>Math.random()-0.5);
+    // Place 2–4 lie mines
+    const count = Math.min(2 + Math.floor(Math.random()*3), emptyTiles.length);
+    for(let i=0;i<count;i++) lieMines.push({r:emptyTiles[i][0], c:emptyTiles[i][1]});
+    // Add to displayed mine count
+    const mineCountEl=document.getElementById('mineCount');
+    mineCountEl.textContent = parseInt(mineCountEl.textContent) + lieMines.length;
+  }
+
+  // Claymores: replace perm.claymoreCount real mines with claymore tiles
+  claymores = [];
+  if(perm.claymoreCount>0) {
+    const mineTiles=[];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+      if(board[r][c]===-1) mineTiles.push([r,c]);
+    }
+    mineTiles.sort(()=>Math.random()-0.5);
+    const toPlace=Math.min(perm.claymoreCount, mineTiles.length);
+    for(let i=0;i<toPlace;i++) {
+      claymores.push({r:mineTiles[i][0], c:mineTiles[i][1]});
+    }
+  }
+}
+
+function recalcNumbers() {
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+    if(board[r][c]===-1) continue;
+    let n=0;
+    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++) {
+      if(dr===0&&dc===0) continue;
+      // Diagonalless: skip corner-only neighbors (diagonal)
+      const nr=r+dr, nc=c+dc;
+      if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&board[nr][nc]===-1) n++;
+    }
+    board[r][c]=n;
+  }
+}
+
+function placeTreasures() {
+  treasureTiles=[];
+  for(let t=0;t<perm.treasureCount;t++) {
+    if(Math.random()<0.25) {
+      for(let att=0;att<500;att++) {
+        const r=Math.floor(Math.random()*rows), c=Math.floor(Math.random()*cols);
+        if(board[r][c]===-1) continue;
+        if(treasureTiles.find(p=>p.r===r&&p.c===c)) continue;
+        treasureTiles.push({r,c}); break;
+      }
+    }
+  }
+}
+
+// =============================================
+// TIMER
+// =============================================
+function startTimer() {
+  if(perm.narratorActive) narratorSpeak('Round started. Timer running.');
+  // Sloth: start the tile timer
+  if(perm.slothActive) startSlothTimer();
+
+  let tickAccum = 0;
+  timerInterval=setInterval(()=>{
+    if(isPaused) return;
+    tickAccum += speedMult;
+    while(tickAccum >= 1) {
+      tickAccum -= 1;
+      seconds++;
+      document.getElementById('timer').textContent=seconds;
+
+      if(perm.timelordActive) {
+        if(seconds%15===0) timelordPenalty+=7;
+        if(seconds%400===0) timelordPenalty+=50;
+        updateHUD();
+      }
+
+      // Timeless: fail round at 40s
+      if(activeOneRound.has('timeless') && seconds>=40 && !timelessFailed && !gameOver && !gameWon) {
+        timelessFailed=true;
+        clearInterval(timerInterval);
+        gameOver=true;
+        const msg=document.getElementById('message');
+        msg.textContent='Time Up! Round Lost.'; msg.className='lose';
+        showRoundSummary(false);
+        return;
+      }
+
+      // Decay: lose 1 life every 100s
+      if(perm.decayActive && !gameOver && !gameWon) {
+        decayPenaltyTimer++;
+        if(decayPenaltyTimer>=100) {
+          decayPenaltyTimer=0;
+          triggerLifeLoss();
+        }
+      }
+
+      // Ventilation temp drift & damage
+      if(perm.ventilationActive && !gameOver && !gameWon) {
+        // Natural drift: ≤70° always gets colder, ≥71° always gets warmer
+        // Heater/cooler override direction and are faster
+        // Curse of Hell/Tundra add extra drift
+        if(perm.ventilationMode==='heater') perm.ventilationTemp+=1.5;
+        else if(perm.ventilationMode==='cooler') perm.ventilationTemp-=1.5;
+        else if(perm.ventilationTemp>=71) perm.ventilationTemp+=(0.3+perm.curseHeatDrift);
+        else perm.ventilationTemp-=(0.3+perm.curseColdDrift);
+        perm.ventilationTemp=Math.max(0,Math.min(200,perm.ventilationTemp));
+
+        if(seconds%3===0) {
+          if(perm.ventilationTemp<=0 || perm.ventilationTemp>=150) {
+            maxLives=Math.max(0,maxLives-1);
+            currentLives=Math.min(currentLives,maxLives);
+            if(maxLives<=0) { endGame(false); return; }
+          }
+        }
+        renderVentilation();
+        updateHUD();
+      }
+
+      // Wrath: +1% rage every 2 seconds
+      if(perm.wrathActive && !firstClick && !gameOver && !gameWon) {
+        if(seconds%2===0) { perm.rage=Math.min(100,perm.rage+1); updateHUD(); }
+      }
+
+      // Wrath: each second roll rage% chance to reveal a random unrevealed tile (including mines)
+      if(perm.wrathActive && perm.rage>0 && !firstClick && !gameOver && !gameWon) {
+        if(Math.random()*100 < perm.rage) {
+          const unrevealed=[];
+          for(let wr=0;wr<rows;wr++) for(let wc=0;wc<cols;wc++) {
+            if(!revealed[wr][wc]&&!flagged[wr][wc]) unrevealed.push([wr,wc]);
+          }
+          if(unrevealed.length>0) {
+            const [wr,wc]=unrevealed[Math.floor(Math.random()*unrevealed.length)];
+            const isMine = board[wr][wc]===-1 && !fakeMines.find(p=>p.r===wr&&p.c===wc) && !lieMines.find(p=>p.r===wr&&p.c===wc);
+            const isClaymore = !!claymores.find(p=>p.r===wr&&p.c===wc);
+            if(isMine) {
+              hitMine(wr,wc);
+            } else if(isClaymore) {
+              const clayIdx=claymores.findIndex(p=>p.r===wr&&p.c===wc);
+              claymores.splice(clayIdx,1);
+              revealed[wr][wc]=true;
+              const mineCountEl=document.getElementById('mineCount');
+              mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+              triggerLifeLoss();
+              if(perm.narratorActive) narratorSpeak('Wrath triggered a claymore!');
+            } else {
+              reveal(wr,wc);
+            }
+            render(); checkWin();
+          }
+        }
+      }
+    }
+  }, 1000/speedMult);
+}
+
+// =============================================
+// CLICK HANDLING
+// =============================================
+function handleClick(r,c) {
+  if(gameOver||gameWon) return;
+  if(isPaused) return;
+  if(revealed[r][c]) return;
+
+  // Reset sloth timer on any tile interaction
+  resetSlothTimer();
+
+  // Ability modes
+  if(abilityMode==='sonar') { useSonar(r,c); return; }
+  if(abilityMode==='sneakersweeper') { useSneaker(r,c); return; }
+  if(abilityMode==='mineless') { useMineless(); return; }
+  if(abilityMode==='beer') {
+    roundAbilities.beer--;
+    abilityMode=null;
+    // Drunken Soldier: 50% chance to get +1 beer back on every use
+    if(mysteryUpgradesBought.drunkenSoldier && Math.random() < 0.5) {
+      roundAbilities.beer++;
+    }
+    if(board[r][c]===-1) {
+      revealed[r][c]=true;
+      renderAbilities(); render(); return;
+    } else {
+      beerWastedPenalty+=5;
+      renderAbilities();
+    }
+  }
+
+  if(flagged[r][c]) return;
+
+  if(firstClick) {
+    firstClick=false;
+    fogRevealedThisRound = true;
+    if(!minesPlaced) {
+      placeMines(r,c);
+      minesPlaced=true;
+    }
+    startTimer();
+  }
+
+  if(board[r][c]===-1) { hitMine(r,c); return; }
+
+  // Fake mine check
+  const fakeIdx=fakeMines.findIndex(p=>p.r===r&&p.c===c);
+  if(fakeIdx!==-1) {
+    fakeMines.splice(fakeIdx,1);
+    beerWastedPenalty+=5; // reuse penalty slot for -5%
+    const mineCountEl=document.getElementById('mineCount');
+    mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+    revealed[r][c]=true;
+    // Trigger X fade animation for all fake mines (blank tiles: X fades to nothing; number tiles: X fades to number)
+    const dn = getDisplayNum(board[r][c], r, c);
+    fakeMineAnimTiles[r+','+c] = { num: dn, startTime: Date.now() };
+    setTimeout(()=>{ delete fakeMineAnimTiles[r+','+c]; render(); }, 1300);
+    if(perm.narratorActive) narratorSpeak('Fake mine! Penalty applied.');
+    render(); updateHUD(); checkWin(); return;
+  }
+
+  // Lie mine check — looks like a mine but acts like empty
+  const lieIdx=lieMines.findIndex(p=>p.r===r&&p.c===c);
+  if(lieIdx!==-1) {
+    lieMines.splice(lieIdx,1);
+    const mineCountEl=document.getElementById('mineCount');
+    mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+    revealed[r][c]=true;
+    if(perm.narratorActive) narratorSpeak('Lie mine revealed. You are safe.');
+    if(perm.minelordLevel>0) minelordTilesPenalty++;
+    render(); updateHUD(); checkWin(); return;
+  }
+
+  const treasIdx = treasureTiles.findIndex(p=>p.r===r&&p.c===c);
+  if(treasIdx!==-1) { foundTreasure(r,c,treasIdx); return; }
+
+  // Alert: check if adjacent (non-diagonal) to a mine or fake mine
+  if(alertUsesLeft>0 && !firstClick) {
+    const dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+    const adjacent=dirs.some(([dr,dc])=>{
+      const nr=r+dr, nc=c+dc;
+      if(nr<0||nr>=rows||nc<0||nc>=cols) return false;
+      return board[nr][nc]===-1 || fakeMines.find(p=>p.r===nr&&p.c===nc);
+    });
+    if(adjacent) {
+      // If this is NOT the same tile we already warned about, warn and halt
+      if(!alertPendingTile || alertPendingTile.r!==r || alertPendingTile.c!==c) {
+        alertPendingTile={r,c};
+        alertUsesLeft--;
+        const msg=document.getElementById('message');
+        msg.textContent='⚠ Mine nearby! Click again to confirm.'; msg.className='';
+        setTimeout(()=>{ if(!gameOver&&!gameWon) msg.textContent=''; },2000);
+        return; // Hold — don't reveal yet
+      }
+      // Second click on same tile — clear pending and fall through to reveal
+      alertPendingTile=null;
+    } else {
+      alertPendingTile=null; // moved away, reset
+    }
+  } else {
+    alertPendingTile=null;
+  }
+
+  // Minelord tile count is handled inside reveal()
+  // Claymore: check if the clicked tile is diagonally adjacent to a claymore
+  if(perm.claymoreCount>0 && !firstClick) {
+    const diagDirs=[[-1,-1],[-1,1],[1,-1],[1,1]];
+    for(const [dr,dc] of diagDirs) {
+      const nr=r+dr, nc=c+dc;
+      if(nr<0||nr>=rows||nc<0||nc>=cols) continue;
+      const clayIdx=claymores.findIndex(p=>p.r===nr&&p.c===nc);
+      if(clayIdx!==-1 && !revealed[nr][nc]) {
+        // Trigger: reveal the claymore and deal 1 life
+        claymores.splice(clayIdx,1);
+        revealed[nr][nc]=true;
+        const mineCountEl=document.getElementById('mineCount');
+        mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+        triggerLifeLoss();
+        if(perm.narratorActive) narratorSpeak('Claymore triggered!');
+        render(); updateHUD();
+        if(gameOver||gameWon) return;
+        // Don't return — still reveal the clicked tile normally
+        break;
+      }
+    }
+  }
+  reveal(r,c);
+  checkWin();
+  render();
+}
+
+function hitMine(r,c) {
+  // Devil's Favor: 35% chance to deny damage
+  if(perm.devilsFavorActive && Math.random() < 0.35) {
+    revealed[r][c]=true;
+    const mineCountEl=document.getElementById('mineCount');
+    mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+    const msg=document.getElementById('message');
+    msg.textContent="Devil's Favor! Damage denied."; msg.className='win';
+    setTimeout(()=>{ if(!gameOver&&!gameWon) msg.textContent=''; },1500);
+    if(perm.narratorActive) narratorSpeak("Devil's Favor activated. Damage denied.");
+    render(); updateHUD(); checkWin(); return;
+  }
+
+  minesHit++;
+  currentLives--;
+
+  // Gluttony: hitting 1 life costs 50% of the TOTAL credit multiplier (once per round)
+  if(perm.gluttonyActive && currentLives===1 && !gluttonyTriggered) {
+    gluttonyTriggered = true;
+    // Total mult% = 100 + extraCreditsPct + enrageRoundBonus + roundCreditMult
+    const totalPct = 100 + perm.extraCreditsPct + enrageRoundBonus + roundCreditMult;
+    const halfPct = Math.round(totalPct / 2);
+    // Collapse everything into extraCreditsPct; zero out round bonuses
+    perm.extraCreditsPct = halfPct - 100;
+    enrageRoundBonus = 0;
+    roundCreditMult = 0;
+    const msg=document.getElementById('message');
+    msg.textContent=`Gluttony! Credit mult cut to ${halfPct}%.`; msg.className='lose';
+    setTimeout(()=>{ if(!gameOver&&!gameWon) msg.textContent=''; },2000);
+    if(perm.narratorActive) narratorSpeak('Gluttony triggered. Credit multiplier halved.');
+  }
+
+  // Enrage effects on life loss
+  if(perm.enrageActive) {
+    enrageRoundBonus+=5;
+    speedMult = (perm.speedsterActive?2:1) + Math.floor(enrageRoundBonus/5)*0.2;
+    const hiddenMines=[];
+    for(let rr=0;rr<rows;rr++) for(let cc=0;cc<cols;cc++) {
+      if(board[rr][cc]===-1&&!revealed[rr][cc]) hiddenMines.push([rr,cc]);
+    }
+    if(hiddenMines.length>0) {
+      const [mr,mc]=hiddenMines[Math.floor(Math.random()*hiddenMines.length)];
+      revealed[mr][mc]=true;
+      const mineCountEl2=document.getElementById('mineCount');
+      mineCountEl2.textContent=Math.max(0,parseInt(mineCountEl2.textContent)-1);
+    }
+  }
+  if(treasureTiles.length>0) treasureTiles.pop();
+  if(perm.largeMinesActive) {
+    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++) {
+      const nr=r+dr, nc=c+dc;
+      if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&!revealed[nr][nc]&&board[nr][nc]!==-1) {
+        const isTr = treasureTiles.find(p=>p.r===nr&&p.c===nc);
+        const isFk = fakeMines.find(p=>p.r===nr&&p.c===nc);
+        if(!isTr && !isFk) revealed[nr][nc]=true;
+      }
+    }
+  }
+  revealed[r][c]=true;
+  const mineCountEl=document.getElementById('mineCount');
+  mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+  const hEl=document.getElementById('livesDisplay');
+  hEl.classList.remove('bounce'); void hEl.offsetWidth; hEl.classList.add('bounce');
+  if(perm.narratorActive) narratorSpeak('Mine hit! ' + currentLives + ' lives remaining.');
+  updateHUD();
+  if(currentLives<=0) {
+    for(let rr=0;rr<rows;rr++) for(let cc=0;cc<cols;cc++)
+      if(board[rr][cc]===-1&&!revealed[rr][cc]) revealed[rr][cc]=true;
+    mineCountEl.textContent=0;
+    render(); endGame(false);
+  } else { render(); checkWin(); }
+}
+
+function foundTreasure(r,c,idx) {
+  treasureFound++;
+  treasureTiles.splice(idx,1);
+  revealed[r][c]=true;
+  render(); checkWin();
+}
+
+function reveal(r,c) {
+  if(r<0||r>=rows||c<0||c>=cols) return;
+  if(revealed[r][c]||flagged[r][c]) return;
+  if(board[r][c]===-1) return;
+  if(treasureTiles.find(p=>p.r===r&&p.c===c)) return;
+  if(fakeMines.find(p=>p.r===r&&p.c===c)) return;
+  // Lie mine chain-reveal: remove from array and decrement count
+  const lieIdx=lieMines.findIndex(p=>p.r===r&&p.c===c);
+  if(lieIdx!==-1) {
+    lieMines.splice(lieIdx,1);
+    const mineCountEl=document.getElementById('mineCount');
+    mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+  }
+  if(perm.minelordLevel>0 && lieIdx===-1) minelordTilesPenalty++; // count non-lie-mine tile reveals
+  revealed[r][c]=true;
+  // Lie mines have board value 0 but their neighbors see them as mines, so DON'T chain from them
+  // Only chain-reveal from actual board[r][c]===0 non-lie-mine tiles
+  if(board[r][c]===0 && lieIdx===-1 && !activeOneRound.has('lessIsMore'))
+    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++) reveal(r+dr,c+dc);
+}
+
+function handleRightClick(e,r,c) {
+  e.preventDefault();
+  if(gameOver||gameWon||revealed[r][c]||isPaused) return;
+  flagged[r][c]=!flagged[r][c];
+  const el=document.getElementById('mineCount');
+  el.textContent=parseInt(el.textContent)+(flagged[r][c]?-1:1);
+
+  // Easter egg: if every unrevealed tile is now flagged AND at least 70% of all tiles
+  // are still unrevealed, scramble the board
+  let allFlagged = true;
+  let unrevealedCount = 0;
+  for(let rr=0;rr<rows;rr++) {
+    for(let cc=0;cc<cols;cc++) {
+      if(!revealed[rr][cc]) {
+        unrevealedCount++;
+        if(!flagged[rr][cc]) allFlagged = false;
+      }
+    }
+  }
+  const enoughUnrevealed = (unrevealedCount / (rows * cols)) >= 0.7;
+  if(allFlagged && !firstClick && enoughUnrevealed) {
+    scrambleBoard();
+    return;
+  }
+
+  render();
+}
+
+// =============================================
+// ABILITIES
+// =============================================
+function toggleAbilityMode(name) {
+  if(isPaused) return;
+  if(abilityMode===name) abilityMode=null;
+  else abilityMode=name;
+  renderAbilities();
+}
+
+function activateBeer() {
+  if(roundAbilities.beer<=0) return;
+  toggleAbilityMode('beer');
+}
+
+function useSonar(r,c) {
+  if(roundAbilities.sonar<=0) { abilityMode=null; renderAbilities(); return; }
+  if(firstClick) { firstClick=false; if(!minesPlaced){ placeMines(r,c); minesPlaced=true; } startTimer(); }
+  roundAbilities.sonar--;
+  sonarPenalty+=5;
+  sonarBeacons[r][c]=true;
+  abilityMode=null;
+  renderAbilities(); render(); updateHUD();
+}
+
+function useSneaker(r,c) {
+  if(roundAbilities.sneakersweeper<=0) { abilityMode=null; renderAbilities(); return; }
+  roundAbilities.sneakersweeper--;
+  for(let cc=0;cc<cols;cc++) {
+    if(!revealed[r][cc]&&!flagged[r][cc]&&board[r][cc]!==-1) {
+      if(!treasureTiles.find(p=>p.r===r&&p.c===cc) && !fakeMines.find(p=>p.r===r&&p.c===cc)) {
+        // Check if it's a lie mine — remove from lieMines array and update count
+        const lieIdx=lieMines.findIndex(p=>p.r===r&&p.c===cc);
+        if(lieIdx!==-1) {
+          lieMines.splice(lieIdx,1);
+          const mineCountEl=document.getElementById('mineCount');
+          mineCountEl.textContent=Math.max(0,parseInt(mineCountEl.textContent)-1);
+        }
+        if(perm.minelordLevel>0) minelordTilesPenalty++;
+        revealed[r][cc]=true;
+      }
+    }
+  }
+  abilityMode=null;
+  renderAbilities(); render(); checkWin();
+}
+
+function useMineless() {
+  if(roundAbilities.mineless<=0||minelessUsed) { abilityMode=null; renderAbilities(); return; }
+  if(firstClick) { abilityMode=null; renderAbilities(); return; } // Can't use before mines placed
+  roundAbilities.mineless--;
+  minelessUsed=true;
+  // Remove 90% of mines
+  let mines=[];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) if(board[r][c]===-1) mines.push([r,c]);
+  mines.sort(()=>Math.random()-0.5);
+  const rem=Math.floor(mines.length*0.9);
+  for(let i=0;i<rem;i++) { board[mines[i][0]][mines[i][1]]=0; }
+  recalcNumbers();
+  totalMines=mines.length-rem;
+  document.getElementById('mineCount').textContent=totalMines;
+  abilityMode=null;
+  renderAbilities(); render(); checkWin();
+}
+
+function renderVentilation() {
+  let el=document.getElementById('ventilation-ui');
+  if(!perm.ventilationActive) { if(el) el.style.display='none'; return; }
+  if(!el) return;
+  el.style.display='block';
+  const temp=Math.round(perm.ventilationTemp);
+  const danger=temp<=0||temp>=150;
+  document.getElementById('vent-temp').textContent=temp+'°';
+  document.getElementById('vent-temp').style.color=danger?'#c0392b':temp<20||temp>130?'#f59e0b':'#2ecc71';
+  const fill=Math.min(100,Math.max(0,(temp/200)*100));
+  document.getElementById('vent-bar-fill').style.width=fill+'%';
+  document.getElementById('vent-bar-fill').style.background=danger?'#c0392b':temp<20||temp>130?'#f59e0b':'#2ecc71';
+  document.getElementById('vent-heater').classList.toggle('vent-active', perm.ventilationMode==='heater');
+  document.getElementById('vent-cooler').classList.toggle('vent-active', perm.ventilationMode==='cooler');
+}
+
+function isFakeMineSpotted(r,c) {
+  if(!fakeMines.find(p=>p.r===r&&p.c===c)) return false;
+  for(let sr=0;sr<rows;sr++) for(let sc=0;sc<cols;sc++) {
+    if(!sonarBeacons[sr][sc]) continue;
+    if(Math.sqrt((r-sr)**2+(c-sc)**2)<=4) return true;
+  }
+  return false;
+}
+
+function isSonarRevealed(r,c) {
+  if(board[r][c]!==-1) return false;
+  for(let sr=0;sr<rows;sr++) for(let sc=0;sc<cols;sc++) {
+    if(!sonarBeacons[sr][sc]) continue;
+    if(Math.sqrt((r-sr)**2+(c-sc)**2)<=4) return true;
+  }
+  return false;
+}
+
+// =============================================
+// WIN / LOSE
+// =============================================
+function permanentGameOver() {
+  flagPermanentGameOver();
+  const btn = document.querySelector('#controls button');
+  if(btn) { btn.disabled=true; btn.textContent='Game Over'; }
+  const summary = document.getElementById('round-summary');
+  const note = document.createElement('div');
+  note.style.cssText = 'margin-top:12px;font-size:11px;letter-spacing:2px;color:#666;text-transform:uppercase;';
+  note.textContent = 'Reopen the page to start a new run.';
+  summary.appendChild(note);
+}
+
+function endGame(won) {
+  clearInterval(timerInterval);
+  stopSlothTimer();
+  gameOver=!won; gameWon=won;
+  const msg=document.getElementById('message');
+  if(!won) {
+    msg.textContent='All Lives Lost.'; msg.className='lose';
+    if(perm.narratorActive) narratorSpeak('All lives lost. Round failed.');
+  }
+  showRoundSummary(won);
+}
+
+function setVentMode(mode) {
+  if(perm.ventilationMode===mode) perm.ventilationMode=null;
+  else perm.ventilationMode=mode;
+  renderVentilation();
+}
+
+// =============================================
+// EASTER EGG: SCRAMBLE
+// =============================================
+function scrambleBoard() {
+  // Collect all unrevealed positions
+  const unrev=[];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+    if(!revealed[r][c]) unrev.push([r,c]);
+  }
+  // Shuffle the board values among unrevealed tiles
+  const vals = unrev.map(([r,c])=>board[r][c]);
+  vals.sort(()=>Math.random()-0.5);
+  unrev.forEach(([r,c],i)=>{ board[r][c]=vals[i]; });
+
+  // Recalc numbers for all tiles (revealed ones too — they already show correctly)
+  // But we only recalc unrevealed tiles' numbers based on new mine layout
+  // First recalc ALL number tiles
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+    if(board[r][c]!==-1) {
+      let n=0;
+      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++) {
+        const nr=r+dr, nc=c+dc;
+        if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&board[nr][nc]===-1) n++;
+      }
+      board[r][c]=n;
+    }
+  }
+
+  // Scramble treasure tile positions among unrevealed tiles
+  if(treasureTiles.length>0) {
+    const unrevSet = new Set(unrev.map(([r,c])=>r+','+c));
+    const newPos=[...unrev].sort(()=>Math.random()-0.5).slice(0,treasureTiles.length);
+    treasureTiles=newPos.filter(([r,c])=>board[r][c]!==-1).map(([r,c])=>({r,c}));
+  }
+
+  // Scramble fake mines among unrevealed non-mine tiles
+  if(fakeMines.length>0) {
+    const unrevSafe=unrev.filter(([r,c])=>board[r][c]!==-1);
+    unrevSafe.sort(()=>Math.random()-0.5);
+    fakeMines=unrevSafe.slice(0,fakeMines.length).map(([r,c])=>({r,c}));
+  }
+
+  // Scramble lie mines among unrevealed zero-value tiles
+  if(lieMines.length>0) {
+    const unrevEmpty=unrev.filter(([r,c])=>board[r][c]===0);
+    unrevEmpty.sort(()=>Math.random()-0.5);
+    lieMines=unrevEmpty.slice(0,lieMines.length).map(([r,c])=>({r,c}));
+  }
+
+  // Scramble sonar beacons among unrevealed tiles
+  const beaconCount = unrev.filter(([r,c])=>sonarBeacons[r][c]).length;
+  if(beaconCount>0) {
+    unrev.forEach(([r,c])=>sonarBeacons[r][c]=false);
+    [...unrev].sort(()=>Math.random()-0.5).slice(0,beaconCount).forEach(([r,c])=>sonarBeacons[r][c]=true);
+  }
+
+  // Unflag everything
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) flagged[r][c]=false;
+
+  // Update mine count display
+  let mineCount=0;
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) if(board[r][c]===-1&&!revealed[r][c]) mineCount++;
+  document.getElementById('mineCount').textContent=mineCount+fakeMines.length+lieMines.length;
+
+  const msg=document.getElementById('message');
+  msg.textContent='✦ SCRAMBLED ✦'; msg.className='win';
+  setTimeout(()=>{ if(!gameOver&&!gameWon) msg.textContent=''; },1200);
+
+  render();
+}
+
+function checkWin() {
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+    if(revealed[r][c]||board[r][c]===-1) continue;
+    if(treasureTiles.find(p=>p.r===r&&p.c===c)) continue;
+    if(fakeMines.find(p=>p.r===r&&p.c===c)) continue;
+    // lie mines are NOT skipped — they must be revealed to win (they act like empty tiles)
+    // Skip tiles diagonally adjacent to an unrevealed claymore (can't safely reach them)
+    if(perm.claymoreCount>0) {
+      const diagDirs=[[-1,-1],[-1,1],[1,-1],[1,1]];
+      const blockedByClaymore = diagDirs.some(([dr,dc])=>{
+        const nr=r+dr, nc=c+dc;
+        return claymores.find(p=>p.r===nr&&p.c===nc) && !revealed[nr][nc];
+      });
+      if(blockedByClaymore) continue;
+    }
+    return;
+  }
+  clearInterval(timerInterval);
+  stopSlothTimer();
+  gameWon=true;
+  document.getElementById('message').textContent='Round Cleared!';
+  document.getElementById('message').className='win';
+  if(perm.narratorActive) narratorSpeak('Round cleared! Well done.');
+  showRoundSummary(true);
+}
+
+function computeMult() {
+  let m = 1 + perm.extraCreditsPct/100;
+  if(perm.timelordActive) m -= timelordPenalty/100;
+  m -= sonarPenalty/100;
+  m -= beerWastedPenalty/100;
+  if(minelessUsed) m -= 0.95;
+  if(!perm.minelordDisabledTC) m += (minesHit * perm.taxCollectorLevel)/100;
+  m += (treasureFound * 5)/100;
+  // One-round bonuses
+  if(activeOneRound.has('timeless')&&!timelessFailed) m += 1.0;
+  if(activeOneRound.has('lessIsMore')) m += 0.20;
+  if(activeOneRound.has('colorNumber')) m += 0.30;
+  // Devil's Favor bonus is already baked into perm.extraCreditsPct via onPick
+  // Enrage round bonus
+  m += enrageRoundBonus/100;
+  // Minelord: per tile penalty + per mine bonus
+  if(perm.minelordLevel>0) {
+    m -= minelordTilesPenalty/100;
+    m += (minesHit * (2 + perm.minelordLevel))/100;
+  }
+  return m;
+}
+
+function showRoundSummary(won) {
+  const mult = computeMult();
+  let earned = 0;
+  if(won) { earned = BASE_REWARD * mult; credits += earned; }
+  const lines = [];
+  if(won) {
+    lines.push(`Credits Earned: <span style="color:#f59e0b">${earned.toFixed(2)} ©</span> &nbsp;(${(mult*100).toFixed(0)}% mult)`);
+  } else {
+    lines.push('<span style="color:#c0392b">No credits earned — round lost.</span>');
+  }
+  lines.push(`Mines Hit: ${minesHit} &nbsp;|&nbsp; Treasures Found: ${treasureFound}`);
+  if(perm.timelordActive) lines.push(`Timelord Penalty This Round: -${timelordPenalty}%`);
+  if(sonarPenalty>0) lines.push(`Sonar Penalty This Round: -${sonarPenalty}%`);
+  if(beerWastedPenalty>0) lines.push(`Wasted Beer/Fake Mine Penalty: -${beerWastedPenalty}%`);
+  if(minelessUsed) lines.push('Mineless Penalty: -95%');
+  if(!perm.minelordDisabledTC && perm.taxCollectorLevel>0) lines.push(`Tax Collector Bonus: +${(minesHit*perm.taxCollectorLevel).toFixed(1)}%`);
+  if(activeOneRound.has('colorNumber')) lines.push('Color Number Bonus: +30%');
+  if(perm.lieMinesActive) lines.push(`Lie Mines Remaining: ${lieMines.length}`);
+  if(activeOneRound.has('timeless')&&!timelessFailed) lines.push('Timeless Bonus: +100%');
+  if(timelessFailed) lines.push('<span style="color:#c0392b">Timeless: Time ran out — no round bonus.</span>');
+  if(activeOneRound.has('lessIsMore')) lines.push('Less Is More Bonus: +20%');
+  if(enrageRoundBonus>0) lines.push(`Enrage Bonus: +${enrageRoundBonus}%`);
+  if(perm.minelordLevel>0) {
+    lines.push(`Minelord Tile Penalty: -${minelordTilesPenalty}%`);
+    lines.push(`Minelord Mine Bonus: +${(minesHit*(2+perm.minelordLevel)).toFixed(1)}%`);
+  }
+  lines.push(`Total Credits: <span style="color:#f59e0b">${Math.floor(credits)} ©</span>`);
+  document.getElementById('round-summary').innerHTML = lines.join('<br>');
+  updateHUD();
+
+  // Bankruptcy check — negative credits = game over
+  if(credits < 0) {
+    clearInterval(timerInterval);
+    gameOver = true; gameWon = false;
+    const msg = document.getElementById('message');
+    msg.textContent = 'BANKRUPT. Game Over.';
+    msg.className = 'lose';
+    document.getElementById('round-summary').innerHTML +=
+      '<br><span style="color:#c0392b;font-weight:700;letter-spacing:2px;">Credits dropped below zero — run ended.</span>';
+    permanentGameOver();
+  }
+}
+
+// =============================================
+// HUD & UI
+// =============================================
+function updateHUD() {
+  document.getElementById('creditsDisplay').textContent = Math.floor(credits)+' ©';
+  let h='';
+  for(let i=0;i<currentLives;i++) h+='❤';
+  for(let i=currentLives;i<maxLives;i++) h+='♡';
+  document.getElementById('livesDisplay').textContent = h||'☠';
+  const m=computeMult();
+  document.getElementById('multDisplay').textContent = (m*100).toFixed(0)+'%';
+  // Rage stat — only show if wrath is active
+  const rageEl = document.getElementById('rageDisplay');
+  if(rageEl) rageEl.parentElement.style.display = perm.wrathActive ? '' : 'none';
+  if(rageEl) rageEl.textContent = perm.rage+'%';
+}
+
+function renderModTags() {
+  const el=document.getElementById('active-mods');
+  el.innerHTML='';
+  const seen=new Set();
+  const ABILITY_MODS = new Set(['sonar','sneakersweeper','beer','mineless']);
+  chosenHistory.forEach(k=>{
+    if(ABILITY_MODS.has(k)) return;
+    if(MODS[k] && MODS[k].noTag) return; // Scrap: no tag
+    if(!seen.has(k)) {
+      seen.add(k);
+      const t=document.createElement('span');
+      t.className='mod-tag';
+      const isSin = MODS[k] && MODS[k].rarity === 'sin';
+      const isDevil = k === 'devilsFavor';
+      if(isDevil) t.classList.add('devils');
+      else if(isSin) t.classList.add('sin');
+
+      // Codex: add tooltip
+      if(perm.codexActive && MODS[k]) {
+        t.classList.add('codex-enabled');
+        const tip = document.createElement('span');
+        tip.className = 'codex-tooltip';
+        tip.textContent = MODS[k].desc;
+        t.appendChild(tip);
+      }
+
+      if(perm.pawnShopActive) {
+        t.classList.add('pawn-sellable');
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = MODS[k].name+` [${perm.pawnShopRemoveCost}©]`;
+        t.insertBefore(nameSpan, t.firstChild);
+        t.title=`Right-click to sell for ${perm.pawnShopRemoveCost}©`;
+        t.addEventListener('contextmenu', e=>{ e.stopPropagation(); pawnShopRemove(k); });
+      } else {
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = MODS[k].name;
+        t.insertBefore(nameSpan, t.firstChild);
+      }
+      el.appendChild(t);
+    }
+  });
+  // Active one-round tags (only for current round)
+  activeOneRound.forEach(k=>{
+    if(ABILITY_MODS.has(k)) return;
+    const t=document.createElement('span');
+    t.className='mod-tag';
+    t.style.color='#a78bfa';
+    if(perm.codexActive && MODS[k]) {
+      t.classList.add('codex-enabled');
+      const tip = document.createElement('span');
+      tip.className = 'codex-tooltip';
+      tip.textContent = MODS[k].desc;
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = MODS[k].name+' ◈';
+      t.appendChild(nameSpan);
+      t.appendChild(tip);
+    } else {
+      t.textContent=MODS[k] ? MODS[k].name+' ◈' : k+' ◈';
+    }
+    el.appendChild(t);
+  });
+  if(perm.riskRewardActive&&perm.riskRewardSwap) {
+    const t=document.createElement('span');
+    t.className='mod-tag'; t.style.color='#f59e0b';
+    t.textContent='Risk & Reward';
+    el.appendChild(t);
+  }
+}
+
+function pawnShopRemove(k) {
+  if(credits < perm.pawnShopRemoveCost) {
+    const msg=document.getElementById('message');
+    msg.textContent=`Need ${perm.pawnShopRemoveCost}© to sell!`; msg.className='';
+    setTimeout(()=>{ if(!gameOver&&!gameWon) msg.textContent=''; },1500);
+    return;
+  }
+  credits -= perm.pawnShopRemoveCost;
+  perm.pawnShopRemoveCost = Math.ceil(perm.pawnShopRemoveCost * 1.2);
+  const idx = chosenHistory.indexOf(k);
+  if(idx!==-1) chosenHistory.splice(idx,1);
+  updateHUD();
+  renderModTags();
+}
+
+function renderAbilities() {
+  const bar=document.getElementById('abilities-bar');
+  bar.innerHTML='';
+  function addBtn(label,count,name) {
+    if(count<=0) return;
+    const b=document.createElement('button');
+    b.className='ability-btn'+(abilityMode===name?' ab-active':'');
+    b.textContent=`${label} (${count})`;
+    b.onclick=()=>toggleAbilityMode(name);
+    bar.appendChild(b);
+  }
+  if(roundAbilities.sonar>0) addBtn('📡 Sonar',roundAbilities.sonar,'sonar');
+  if(roundAbilities.sneakersweeper>0) addBtn('👟 Sneaker',roundAbilities.sneakersweeper,'sneakersweeper');
+  if(roundAbilities.beer>0) addBtn('🍺 Beer',roundAbilities.beer,'beer');
+  if(roundAbilities.mineless>0&&!minelessUsed) addBtn('💨 Mineless',roundAbilities.mineless,'mineless');
+}
+
+// =============================================
+// RENDER
+// =============================================
+function getDisplayNum(n, r, c) {
+  let num = n;
+  if(perm.riskRewardActive&&perm.riskRewardSwap) {
+    if(perm.riskRewardSwap==='12') { if(num===1)num=2; else if(num===2)num=1; }
+    if(perm.riskRewardSwap==='34') { if(num===3)num=4; else if(num===4)num=3; }
+  }
+  if(r!==undefined && wrongNumberTiles.find(p=>p.r===r&&p.c===c)) num=Math.min(8,num+1);
+  // Lie Mines: count unrevealed lie mine neighbors as extra mines in the display number
+  if(r!==undefined && lieMines.length>0) {
+    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++) {
+      if(dr===0&&dc===0) continue;
+      const nr=r+dr, nc=c+dc;
+      if(nr>=0&&nr<rows&&nc>=0&&nc<cols) {
+        if(lieMines.find(p=>p.r===nr&&p.c===nc)&&!revealed[nr][nc]) num=Math.min(8,num+1);
+      }
+    }
+  }
+  return num;
+}
+
+function isTileInFog(r, c, radius) {
+  for(let rr=0;rr<rows;rr++) for(let cc=0;cc<cols;cc++) {
+    if(revealed[rr][cc] && Math.abs(r-rr)<=radius && Math.abs(c-cc)<=radius) return true;
+  }
+  return false;
+}
+
+function render() {
+  const boardEl=document.getElementById('board');
+  boardEl.innerHTML='';
+  for(let r=0;r<rows;r++) {
+    const rowEl=document.createElement('div');
+    rowEl.className='row';
+    for(let c=0;c<cols;c++) {
+      const cell=document.createElement('div');
+      cell.className='cell';
+      const isTreasure=!!treasureTiles.find(p=>p.r===r&&p.c===c);
+      const isFake=!!fakeMines.find(p=>p.r===r&&p.c===c);
+      const isLieMine=!revealed[r][c]&&!!lieMines.find(p=>p.r===r&&p.c===c);
+      const isSonarMine=!revealed[r][c]&&isSonarRevealed(r,c);
+      const isFakeSpotted=!revealed[r][c]&&isFakeMineSpotted(r,c);
+      const isBeacon=sonarBeacons[r][c];
+      const isScout=firstClick&&!!scoutTiles.find(p=>p.r===r&&p.c===c);
+
+      if(revealed[r][c]) {
+        const animKey = r+','+c;
+        if(fakeMineAnimTiles[animKey]) {
+          const numColors = ['','#5b9ef4','#52c48a','#e05c5c','#8a6be8','#e07c5c','#5ce0d0','#e0c05c','#aaa'];
+          const dn = fakeMineAnimTiles[animKey].num;
+          cell.classList.add('revealed','fake-anim');
+          if(dn > 0) {
+            const col = numColors[dn] || '#e0dbd4';
+            cell.innerHTML = `<span class="fake-anim-x">✕</span><span class="fake-anim-num" style="color:${col}">${dn}</span>`;
+          } else {
+            cell.innerHTML = `<span class="fake-anim-x">✕</span>`;
+          }
+        } else if(board[r][c]===-1) {
+          // Claymore mines render green, regular mines red
+          if(claymores.find(p=>p.r===r&&p.c===c)) {
+            cell.classList.add('mine-claymore');
+          } else {
+            cell.classList.add('mine');
+          }
+          cell.textContent='✕';
+        } else if(isTreasure) {
+          cell.classList.add('treasure-found');
+          cell.textContent='T';
+        } else {
+          cell.classList.add('revealed');
+          const dn=getDisplayNum(board[r][c],r,c);
+          if(dn>0) {
+            if(colorNumberRound) {
+              // Color Number: show a colored block instead of the digit
+              const numColors = ['','#5b9ef4','#52c48a','#e05c5c','#8a6be8','#e07c5c','#5ce0d0','#e0c05c','#aaa'];
+              const col = numColors[dn] || '#e0dbd4';
+              cell.classList.add('color-number-cell');
+              cell.innerHTML = `<span style="display:inline-block;width:10px;height:10px;background:${col};border-radius:2px;"></span>`;
+            } else {
+              cell.textContent=dn; cell.dataset.n=dn;
+            }
+          }
+        }
+      } else if(isTreasure&&revealed[r][c]) {
+        cell.classList.add('treasure-found');
+        cell.textContent='T';
+      } else if(isTreasure&&!revealed[r][c]) {
+        if(flagged[r][c]) { cell.classList.add('flagged'); cell.textContent='F'; }
+        else cell.classList.add('treasure');
+      } else if(isBeacon) {
+        cell.classList.add('sonar-beacon');
+        cell.textContent='◎';
+      } else if(isSonarMine) {
+        if(claymores.find(p=>p.r===r&&p.c===c)) {
+          cell.classList.add('sonar-mine-claymore');
+          cell.textContent='◉';
+        } else {
+          cell.classList.add('sonar-mine');
+          cell.textContent='◉';
+        }
+      } else if(isFakeSpotted) {
+        cell.classList.add('sonar-mine');
+        cell.style.opacity='0.6';
+        cell.textContent='?';
+      } else if(isScout) {
+        cell.classList.add('revealed');
+        cell.style.color='#5b9ef4';
+        cell.style.fontSize='9px';
+        cell.textContent='?';
+      } else if(flagged[r][c]) {
+        cell.classList.add('flagged');
+        cell.textContent='F';
+      }
+
+      cell.addEventListener('click',()=>handleClick(r,c));
+      cell.addEventListener('contextmenu',e=>handleRightClick(e,r,c));
+
+      // Fog of War: hide cells not within fogRadius of any revealed tile
+      if(perm.fogOfWarCount>0 && !firstClick && fogRevealedThisRound && !revealed[r][c]) {
+        const fogRadius = Math.max(3, 6 - (perm.fogOfWarCount - 1));
+        if(!isTileInFog(r,c,fogRadius)) {
+          cell.style.background='#0e0e0e';
+          cell.style.boxShadow='none';
+          cell.style.pointerEvents='none';
+          cell.textContent='';
+          cell.className='cell';
+        }
+      }
+
+      rowEl.appendChild(cell);
+    }
+    boardEl.appendChild(rowEl);
+  }
+  updateHUD();
+}
+
+// =============================================
+// NARRATOR (TTS)
+// =============================================
+function narratorSpeak(text) {
+  if(!perm.narratorActive) return;
+  if(!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.rate = 1.1;
+  utt.pitch = 0.9;
+  window.speechSynthesis.speak(utt);
+}
+
+// =============================================
+// DEVIL'S FAVOR CHECK
+// =============================================
+function checkDevilsFavor() {
+  if(perm.devilsFavorActive) return;
+  if(!perm.greedActive || !perm.gluttonyActive || !perm.slothActive) return;
+  // All 3 sins collected — trigger Devil's Favor
+  // Remove sins from chosenHistory display (disable their tags)
+  ['greed','gluttony','sloth'].forEach(k => {
+    const idx = chosenHistory.indexOf(k);
+    if(idx !== -1) chosenHistory.splice(idx, 1);
+  });
+  // Add Devil's Favor
+  chosenHistory.push('devilsFavor');
+  MODS['devilsFavor'].onPick();
+  renderModTags();
+  if(perm.narratorActive) narratorSpeak("All three sins collected. Devil's Favor unlocked.");
+  // Flash message
+  const msg = document.getElementById('message');
+  msg.textContent = "☠ Devil's Favor unlocked! +200% Credits & Mine Denial.";
+  msg.className = 'win';
+  setTimeout(()=>{ if(!gameOver&&!gameWon) msg.textContent=''; }, 3000);
+}
+
+// =============================================
+// SLOTH TIMER
+// =============================================
+function startSlothTimer() {
+  if(!perm.slothActive) return;
+  slothTimer = 3;
+  slothActive = true;
+  updateSlothBar();
+  document.getElementById('sloth-bar-wrap').style.display = 'block';
+  slothInterval = setInterval(() => {
+    if(isPaused || gameOver || gameWon) return;
+    slothTimer -= 0.1;
+    updateSlothBar();
+    if(slothTimer <= 0) {
+      slothTimer = 3;
+      updateSlothBar();
+      triggerLifeLoss();
+      if(perm.narratorActive) narratorSpeak('Sloth! Time expired. Life lost.');
+      if(gameOver || gameWon) { stopSlothTimer(); return; }
+    }
+  }, 100);
+}
+
+function stopSlothTimer() {
+  clearInterval(slothInterval);
+  slothInterval = null;
+  slothActive = false;
+  document.getElementById('sloth-bar-wrap').style.display = 'none';
+}
+
+function resetSlothTimer() {
+  if(!perm.slothActive || !slothActive) return;
+  slothTimer = 3;
+  updateSlothBar();
+}
+
+function updateSlothBar() {
+  const fill = Math.max(0, (slothTimer / 3) * 100);
+  const bar = document.getElementById('sloth-bar-fill');
+  if(bar) {
+    bar.style.width = fill + '%';
+    bar.style.background = fill > 50 ? '#52c48a' : fill > 25 ? '#f59e0b' : '#e05c5c';
+  }
+}
+
+// =============================================
+// PAUSE (Pause Button mod)
+// =============================================
+function pause() {
+  if(!perm.pauseButtonActive) return;
+  if(firstClick || gameOver || gameWon) return;
+  isPaused = true;
+  document.getElementById('pause-overlay').classList.remove('hidden');
+  closeMysteryPanel();
+}
+
+function unpause() {
+  isPaused = false;
+  document.getElementById('pause-overlay').classList.add('hidden');
+}
+
+function togglePause() {
+  if(!perm.pauseButtonActive) return;
+  if(firstClick || gameOver || gameWon) return;
+  if(isPaused) unpause();
+  else pause();
+}
+
+// Key listener for P
+document.addEventListener('keydown', e => {
+  if(e.key === 'p' || e.key === 'P') {
+    togglePause();
+  }
+});
+
+// =============================================
+// MYSTERY BUTTON SYSTEM
+// =============================================
+let mysteryMoney = 0;
+let totalCreditsInvested = 0; // total credits ever fed into the machine
+let isPermanentGameOver = false; // set when permanentGameOver() fires
+let mysteryUpgradesBought = {
+  // super (one-time)
+  infiniteCoupon: false,
+  drunkenSoldier: false,
+  blue: false,
+};
+// next-toll-only discount
+let mysteryNextTollHalf = false;
+// coupon active (permanent toll shop discount)
+let mysteryInfiniteCoupon = false;
+
+// Blue mode — track state
+function applyBlueModeIfActive() {
+  if(mysteryUpgradesBought.blue) {
+    document.documentElement.style.setProperty('--mine-bg','#1a4080');
+    document.documentElement.style.setProperty('--lose-color','#2255cc');
+    document.body.classList.add('blue-mode');
+  }
+}
+
+// Called by permanentGameOver — disables the big red button
+function flagPermanentGameOver() {
+  isPermanentGameOver = true;
+  const btn = document.getElementById('big-red-btn');
+  if(btn) btn.disabled = true;
+}
+
+function isMysteryBlocked() {
+  // Any overlay other than the mystery panel itself
+  if(!document.getElementById('mod-overlay').classList.contains('hidden')) return true;
+  if(!document.getElementById('toll-overlay').classList.contains('hidden')) return true;
+  if(!document.getElementById('pause-overlay').classList.contains('hidden')) return true;
+  return false;
+}
+
+function openMysteryPanel() {
+  if(isMysteryBlocked()) return;
+  clampMysteryInput();
+  renderMysteryUpgrades();
+  document.getElementById('mystery-panel').classList.remove('hidden');
+}
+
+function closeMysteryPanel() {
+  document.getElementById('mystery-panel').classList.add('hidden');
+}
+
+function clampMysteryInput() {
+  const inp = document.getElementById('mystery-amount');
+  const max = Math.floor(credits);
+  inp.max = max;
+  if(parseInt(inp.value) < 1 || isNaN(parseInt(inp.value))) inp.value = 1;
+  if(parseInt(inp.value) > max) inp.value = max > 0 ? max : 1;
+}
+
+function pressBigRedBtn() {
+  if(isPermanentGameOver) return;
+  const inp = document.getElementById('mystery-amount');
+  clampMysteryInput();
+  let amount = parseInt(inp.value);
+  if(isNaN(amount) || amount < 1) return;
+  const maxCredits = Math.floor(credits);
+  if(amount > maxCredits) { amount = maxCredits; }
+  if(amount < 1) return;
+
+  credits -= amount;
+  mysteryMoney += amount * 2;
+  totalCreditsInvested += amount;
+  updateHUD();
+  clampMysteryInput();
+
+  // Unlock upgrades section after 5 credits invested (total)
+  if(totalCreditsInvested >= 5) {
+    document.getElementById('mystery-upgrades-section').classList.remove('hidden');
+  }
+  updateMysteryMoneyDisplay();
+  renderMysteryUpgrades();
+}
+
+function updateMysteryMoneyDisplay() {
+  const el = document.getElementById('mystery-money-display');
+  if(el) el.textContent = mysteryMoney + ' $';
+}
+
+// ---- UPGRADE DEFINITIONS ----
+const MYSTERY_UPGRADES = [
+  {
+    id: 'minusTime',
+    name: '-10 Time',
+    desc: 'Reduces the time counter by 10.',
+    cost: 10,
+    super: false,
+    canBuy: () => true,
+    bought: () => false,
+    apply: () => {
+      seconds = Math.max(0, seconds - 10);
+      document.getElementById('timer').textContent = seconds;
+    }
+  },
+  {
+    id: 'plusTime',
+    name: '+20 Time',
+    desc: 'Increases the time counter by 20.',
+    cost: 10,
+    super: false,
+    canBuy: () => true,
+    bought: () => false,
+    apply: () => {
+      seconds += 20;
+      document.getElementById('timer').textContent = seconds;
+    }
+  },
+  {
+    id: 'revealMine',
+    name: 'Reveal 1 Mine',
+    desc: 'Reveals a random mine without dealing damage.',
+    cost: 10,
+    super: false,
+    canBuy: () => !firstClick && !gameOver && !gameWon,
+    bought: () => false,
+    apply: () => {
+      const hiddenMines = [];
+      for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+        if(board[r][c]===-1 && !revealed[r][c]) hiddenMines.push([r,c]);
+      }
+      if(hiddenMines.length > 0) {
+        const [mr,mc] = hiddenMines[Math.floor(Math.random()*hiddenMines.length)];
+        revealed[mr][mc] = true;
+        const mineCountEl = document.getElementById('mineCount');
+        mineCountEl.textContent = Math.max(0, parseInt(mineCountEl.textContent)-1);
+        closeMysteryPanel();
+        render();
+        checkWin();
+      }
+    }
+  },
+  {
+    id: 'cutToll',
+    name: 'Cut Toll In Half',
+    desc: 'Cuts only the next toll price in half.',
+    cost: 50,
+    super: false,
+    canBuy: () => true,
+    bought: () => false,
+    apply: () => { mysteryNextTollHalf = true; }
+  },
+  {
+    id: 'infiniteCoupon',
+    name: 'Infinite Coupon',
+    desc: 'Reduces all Toll Shop prices by 20% permanently.',
+    cost: 400,
+    super: true,
+    canBuy: () => !mysteryUpgradesBought.infiniteCoupon,
+    bought: () => mysteryUpgradesBought.infiniteCoupon,
+    apply: () => { mysteryUpgradesBought.infiniteCoupon = true; mysteryInfiniteCoupon = true; }
+  },
+  {
+    id: 'drunkenSoldier',
+    name: 'Drunken Soldier',
+    desc: 'When you use up a Beer ability, 50% chance to get another Beer.',
+    cost: 250,
+    super: true,
+    canBuy: () => !mysteryUpgradesBought.drunkenSoldier,
+    bought: () => mysteryUpgradesBought.drunkenSoldier,
+    apply: () => { mysteryUpgradesBought.drunkenSoldier = true; }
+  },
+  {
+    id: 'blue',
+    name: 'Blue',
+    desc: 'Changes all red colors to blue.',
+    cost: 1000,
+    super: true,
+    canBuy: () => !mysteryUpgradesBought.blue,
+    bought: () => mysteryUpgradesBought.blue,
+    apply: () => {
+      mysteryUpgradesBought.blue = true;
+      applyBlueModeIfActive();
+    }
+  }
+];
+
+function renderMysteryUpgrades() {
+  updateMysteryMoneyDisplay();
+  const list = document.getElementById('mystery-upgrades-list');
+  if(!list) return;
+  list.innerHTML = '';
+  MYSTERY_UPGRADES.forEach(upg => {
+    const row = document.createElement('div');
+    row.className = 'upgrade-row';
+
+    const info = document.createElement('div');
+    info.className = 'upgrade-info';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'upgrade-name' + (upg.super ? ' super' : '') + (upg.bought() ? ' bought' : '');
+    nameEl.textContent = upg.name + (upg.super ? ' ✦' : '');
+    info.appendChild(nameEl);
+
+    const descEl = document.createElement('div');
+    descEl.className = 'upgrade-desc';
+    descEl.textContent = upg.desc;
+    info.appendChild(descEl);
+
+    const costEl = document.createElement('div');
+    costEl.className = 'upgrade-cost' + (upg.super ? ' super' : '');
+    costEl.textContent = upg.cost + ' $';
+    info.appendChild(costEl);
+
+    row.appendChild(info);
+
+    const btn = document.createElement('button');
+    btn.className = 'upgrade-buy-btn';
+    const alreadyBought = upg.bought();
+    btn.textContent = alreadyBought ? 'OWNED' : 'BUY';
+    btn.disabled = alreadyBought || !upg.canBuy() || mysteryMoney < upg.cost || isPermanentGameOver;
+    btn.onclick = () => buyMysteryUpgrade(upg);
+    row.appendChild(btn);
+
+    list.appendChild(row);
+  });
+}
+
+function buyMysteryUpgrade(upg) {
+  if(isPermanentGameOver) return;
+  if(mysteryMoney < upg.cost) return;
+  if(upg.bought()) return;
+  if(!upg.canBuy()) return;
+  mysteryMoney -= upg.cost;
+  upg.apply();
+  updateMysteryMoneyDisplay();
+  renderMysteryUpgrades();
+}
+
+function showMysteryWidgetIfReady() {
+  if(roundNumber >= 10) {
+    document.getElementById('mystery-btn-widget').style.display = 'block';
+  }
+}
+
+// =============================================
+// INIT
+// =============================================
+(function init(){
+  rows=BASE_ROWS; cols=BASE_COLS; totalMines=BASE_MINES;
+  board=Array.from({length:rows},()=>Array(cols).fill(0));
+  revealed=Array.from({length:rows},()=>Array(cols).fill(false));
+  flagged=Array.from({length:rows},()=>Array(cols).fill(false));
+  sonarBeacons=Array.from({length:rows},()=>Array(cols).fill(false));
+  treasureTiles=[];
+  currentLives=maxLives;
+  gameOver=false; gameWon=false; firstClick=true; seconds=0;
+  updateHUD(); render();
+  // Kick off round 1 with modifier selection, same as every other round
+  startNewRound();
+})();
+</script>
+</body>
+</html>

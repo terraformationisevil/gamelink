@@ -1,0 +1,6 @@
+{
+  "MODNAME": "Example Mod",
+  "ICON": "E",
+  "desc": "+20% credits permanently each time you pick a modifier.",
+  "code": "// Example Mod — +20% credits every time the player picks a modifier.\n// Patches selectMod, which is called whenever a modifier card is clicked.\n\nvar _orig = window.selectMod;\n\nwindow.selectMod = function(k, creditCost, isFree) {\n  _orig(k, creditCost, isFree);\n  addCreditPct(20);\n  updateHUD();\n};\n\nreturn {\n  unload: function() {\n    window.selectMod = _orig;\n  }\n};"
+}

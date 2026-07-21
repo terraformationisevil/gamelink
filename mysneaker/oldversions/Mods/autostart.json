@@ -1,0 +1,6 @@
+{
+  "MODNAME": "Auto-Start",
+  "ICON": "A",
+  "desc": "Automatically skips the main menu (Refresh the page)",
+  "code": "var saveTimeout = setTimeout(function() {\n  if (typeof saveModsToStorage === 'function') {\n    saveModsToStorage();\n  }\n}, 1000);\n\nconst menu = document.getElementById('main-menu');\nif (menu && !menu.classList.contains('hidden')) {\n  if (typeof startGame === 'function') {\n    startGame();\n  }\n}\n\nreturn {\n  unload: function() {\n    clearTimeout(saveTimeout);\n  }\n};"
+}
