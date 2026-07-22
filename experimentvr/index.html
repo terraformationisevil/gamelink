@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VR Sandbox: Grab, Craft &amp; Shoot</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: #111; }
+  #info {
+    position: absolute; top: 12px; left: 0; width: 100%;
+    text-align: center; color: #fff; font-family: sans-serif;
+    font-size: 14px; z-index: 1; pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="info">Grip = grab / throw cubes, balls, or weapons (swap hands by grabbing with the other one)<br>
+Trigger = aim &amp; teleport (1s cooldown) &nbsp;|&nbsp; Left stick = move &nbsp;|&nbsp; Right stick = turn<br>
+Press Y x3 in 2s = spawn cube in hand &nbsp;|&nbsp; Press X x3 in 2s = spawn ball in hand &nbsp;|&nbsp; X/A = shoot when holding a gun</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/+esm"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+// ================================================================
+// Basic scene setup
+// ================================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 10, 50);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 100);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ================================================================
+// Lighting
+// ================================================================
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(3, 8, 4);
+scene.add(dirLight);
+
+// ================================================================
+// Player rig (moving this moves the player in VR)
+// ================================================================
+const rig = new THREE.Group();
+rig.position.set(0, 0, 3);
+rig.add(camera);
+scene.add(rig);
+
+// ================================================================
+// Physics world (cannon-es)
+// ================================================================
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+world.broadphase = new CANNON.SAPBroadphase(world);
+world.allowSleep = true;
+world.solver.iterations = 15;
+
+const groundPhysMaterial = new CANNON.Material('ground');
+const cubePhysMaterial = new CANNON.Material('cube');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, cubePhysMaterial, { friction: 0.45, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(cubePhysMaterial, cubePhysMaterial, { friction: 0.45, restitution: 0.05 }));
+
+function threeQuatToCannon(q) { return new CANNON.Quaternion(q.x, q.y, q.z, q.w); }
+
+// Running elapsed-time clock, updated once per frame in the render loop below.
+// Declared early so systems defined before the render loop (bullets, cooldowns, etc.)
+// can reference the current time when they're first set up.
+let simTime = 0;
+
+function addStaticBoxBody(mesh, halfExtents) {
+  const body = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+  body.addShape(new CANNON.Box(new CANNON.Vec3(halfExtents.x, halfExtents.y, halfExtents.z)));
+  body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+  body.quaternion.copy(threeQuatToCannon(mesh.quaternion));
+  world.addBody(body);
+  return body;
+}
+
+// ================================================================
+// World geometry: platform + ramp + top platform
+// ================================================================
+const PLATFORM_SIZE = 80; // 2x bigger than the original 40
+
+const platform = new THREE.Mesh(
+  new THREE.BoxGeometry(PLATFORM_SIZE, 0.2, PLATFORM_SIZE),
+  new THREE.MeshStandardMaterial({ color: 0x2ecc40, roughness: 0.9 })
+);
+platform.position.y = -0.1;
+scene.add(platform);
+addStaticBoxBody(platform, new THREE.Vector3(PLATFORM_SIZE / 2, 0.1, PLATFORM_SIZE / 2));
+
+const grid = new THREE.GridHelper(PLATFORM_SIZE, 80, 0x1c7a2c, 0x1c7a2c);
+grid.position.y = 0.001;
+scene.add(grid);
+
+// --- Slope + platform-at-top footprint (used for both visuals & player-walking collision) ---
+const RAMP_X_MIN = -3, RAMP_X_MAX = 3;
+const RAMP_Z_BOTTOM = -10;   // low end of the ramp (height 0)
+const RAMP_Z_TOP = -20;      // high end of the ramp (height RAMP_HEIGHT)
+const RAMP_HEIGHT = 3;
+
+const TOP_X_MIN = -3, TOP_X_MAX = 3;
+const TOP_Z_MIN = -24, TOP_Z_MAX = -20;
+
+const rampMat = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.8 });
+
+const rampRun = RAMP_Z_BOTTOM - RAMP_Z_TOP; // 10
+const rampAngle = Math.atan2(RAMP_HEIGHT, rampRun);
+const rampHyp = Math.sqrt(rampRun * rampRun + RAMP_HEIGHT * RAMP_HEIGHT);
+
+const rampMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(RAMP_X_MAX - RAMP_X_MIN, 0.3, rampHyp),
+  rampMat
+);
+rampMesh.rotation.x = rampAngle;
+rampMesh.position.set(0, RAMP_HEIGHT / 2, (RAMP_Z_BOTTOM + RAMP_Z_TOP) / 2);
+scene.add(rampMesh);
+addStaticBoxBody(rampMesh, new THREE.Vector3((RAMP_X_MAX - RAMP_X_MIN) / 2, 0.15, rampHyp / 2));
+
+const topPlatformMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(TOP_X_MAX - TOP_X_MIN, 0.3, TOP_Z_MAX - TOP_Z_MIN),
+  rampMat
+);
+topPlatformMesh.position.set(0, RAMP_HEIGHT - 0.15, (TOP_Z_MIN + TOP_Z_MAX) / 2);
+scene.add(topPlatformMesh);
+addStaticBoxBody(topPlatformMesh, new THREE.Vector3((TOP_X_MAX - TOP_X_MIN) / 2, 0.15, (TOP_Z_MAX - TOP_Z_MIN) / 2));
+
+// Returns the walkable height of the world at a given x,z (used for the player's feet, not the cubes).
+function getGroundHeight(x, z) {
+  if (x >= TOP_X_MIN && x <= TOP_X_MAX && z >= TOP_Z_MIN && z <= TOP_Z_MAX) {
+    return RAMP_HEIGHT;
+  }
+  if (x >= RAMP_X_MIN && x <= RAMP_X_MAX && z <= RAMP_Z_BOTTOM && z >= RAMP_Z_TOP) {
+    const t = (RAMP_Z_BOTTOM - z) / (RAMP_Z_BOTTOM - RAMP_Z_TOP);
+    return t * RAMP_HEIGHT;
+  }
+  return 0;
+}
+
+// ================================================================
+// Cubes (grabbable, throwable) — physics fully driven by cannon-es
+// ================================================================
+const CUBE_SIZE = 0.2;
+const GRAB_DISTANCE = 0.4;
+const THROW_MULTIPLIER = 1.3;
+const CUBE_MASS = 0.4;
+
+function makeCubeMesh(color) {
+  return new THREE.Mesh(
+    new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE),
+    new THREE.MeshStandardMaterial({
+      color, roughness: 0.4, metalness: 0.1,
+      emissive: 0x000000, emissiveIntensity: 0
+    })
+  );
+}
+
+const cubeDefs = [
+  { pos: [0, 1.5, 2],      color: 0xff8c00 }, // base cube
+  { pos: [0, 3.0, 2],      color: 0x3498db }, // stacked on base cube
+  { pos: [0, 4.5, 2],      color: 0x9b59b6 }, // stacked on the second cube
+  { pos: [1.5, 1.5, 1.2],  color: 0xe74c3c }, // a little further away
+  { pos: [-1.5, 1.5, 2.8], color: 0xf1c40f }, // a little further away
+];
+
+function makeCubeState(def) {
+  const mesh = makeCubeMesh(def.color);
+  mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: CUBE_MASS,
+    material: cubePhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(CUBE_SIZE / 2, CUBE_SIZE / 2, CUBE_SIZE / 2)),
+    linearDamping: 0.05,
+    angularDamping: 0.3
+  });
+  body.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  world.addBody(body);
+
+  return {
+    itemType: 'cube',
+    mesh,
+    body,
+    grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(),
+    grabOffsetQuat: new THREE.Quaternion(),
+    highlightAmount: 0
+  };
+}
+
+const cubes = cubeDefs.map(makeCubeState);
+
+// ================================================================
+// Balls (grabbable, throwable, craft material) — same physics pattern as cubes
+// ================================================================
+const BALL_RADIUS = 0.09;
+const BALL_MASS = 0.25;
+const ballPhysMaterial = new CANNON.Material('ball');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, ballPhysMaterial, { friction: 0.4, restitution: 0.35 }));
+world.addContactMaterial(new CANNON.ContactMaterial(cubePhysMaterial, ballPhysMaterial, { friction: 0.4, restitution: 0.2 }));
+world.addContactMaterial(new CANNON.ContactMaterial(ballPhysMaterial, ballPhysMaterial, { friction: 0.4, restitution: 0.35 }));
+
+function makeBallMesh(color) {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(BALL_RADIUS, 20, 16),
+    new THREE.MeshStandardMaterial({
+      color, roughness: 0.3, metalness: 0.15,
+      emissive: 0x000000, emissiveIntensity: 0
+    })
+  );
+}
+
+function makeBallState(def) {
+  const mesh = makeBallMesh(def.color);
+  mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: BALL_MASS,
+    material: ballPhysMaterial,
+    shape: new CANNON.Sphere(BALL_RADIUS),
+    linearDamping: 0.05,
+    angularDamping: 0.3
+  });
+  body.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  world.addBody(body);
+
+  return {
+    itemType: 'ball',
+    mesh,
+    body,
+    grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(),
+    grabOffsetQuat: new THREE.Quaternion(),
+    highlightAmount: 0
+  };
+}
+
+const ballDefs = [
+  { pos: [2.2, 1.5, 1.5],  color: 0x2ecc71 },
+  { pos: [2.5, 1.5, 2.0],  color: 0x1abc9c },
+  { pos: [-2.2, 1.5, 1.2], color: 0xe67e22 },
+];
+const balls = ballDefs.map(makeBallState);
+
+// Combined list of hand-grabbable small items (cubes + balls) used for the grip-grab search.
+const grabbableItems = [...cubes, ...balls];
+
+const SPAWN_CUBE_COLORS = [0xff8c00, 0x3498db, 0x9b59b6, 0xe74c3c, 0xf1c40f, 0x2ecc71];
+const SPAWN_BALL_COLORS = [0x2ecc71, 0x1abc9c, 0xe67e22, 0x9b59b6, 0x3498db];
+
+function spawnCubeAtPosition(position) {
+  const color = SPAWN_CUBE_COLORS[Math.floor(Math.random() * SPAWN_CUBE_COLORS.length)];
+  const item = makeCubeState({ pos: [position.x, position.y, position.z], color });
+  cubes.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+function spawnBallAtPosition(position) {
+  const color = SPAWN_BALL_COLORS[Math.floor(Math.random() * SPAWN_BALL_COLORS.length)];
+  const item = makeBallState({ pos: [position.x, position.y, position.z], color });
+  balls.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+// ================================================================
+// Controllers: laser pointer, hand spheres, grab, throw, teleport
+// ================================================================
+const tempMatrix = new THREE.Matrix4();
+const raycaster = new THREE.Raycaster();
+const teleportTargets = [platform, rampMesh, topPlatformMesh];
+
+const TELEPORT_COOLDOWN = 1.0;
+
+const controllers = [];
+const handSpheres = [];
+const cooldownIndicators = [];
+
+function createCooldownIndicator() {
+  const group = new THREE.Group();
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.06, 0.012),
+    new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
+  );
+  const fillGeo = new THREE.PlaneGeometry(0.06, 0.012);
+  fillGeo.translate(0.03, 0, 0); // pivot so scale.x grows from the left edge
+  const fill = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color: 0xffaa00, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+  fill.position.x = -0.03;
+  // separate the two panels along Z so they never coplanar-fight, and render fill after bg
+  bg.position.z = 0;
+  bg.renderOrder = 0;
+  fill.position.z = 0.001;
+  fill.renderOrder = 1;
+  group.add(bg);
+  group.add(fill);
+  group.position.set(0, 0.03, -0.05);
+  group.rotation.x = -Math.PI / 2.4;
+  group.visible = false;
+  return { group, fill };
+}
+
+function getControllerWorldPose(controller) {
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(pos);
+  controller.getWorldQuaternion(quat);
+  return { pos, quat };
+}
+
+for (let i = 0; i < 2; i++) {
+  const controller = renderer.xr.getController(i);
+  controller.userData.handedness = null; // filled in on connect
+  controller.userData.isSelecting = false;
+  controller.userData.heldCube = null;      // held small item (cube/ball) state, or null
+  controller.userData.heldWeapon = null;    // { weapon, handleName } for a held weapon grip, or null
+  controller.userData.teleportCooldown = 0;
+  controller.userData.linearVelocity = new THREE.Vector3();
+  controller.userData.angularVelocity = new THREE.Vector3();
+  controller.userData.prevPos = null;
+  controller.userData.prevQuat = null;
+  // button edge-detection state (gamepad buttons are polled, not events)
+  controller.userData.prevButtons = [];
+  controller.userData.tapTimes = []; // timestamps of recent X/Y taps for this controller's face button
+  controller.userData.shootHeld = false;
+  rig.add(controller);
+  controllers.push(controller);
+
+  controller.addEventListener('connected', (evt) => {
+    controller.userData.handedness = evt.data && evt.data.handedness;
+  });
+
+  // simple sphere "hand"
+  const grip = renderer.xr.getControllerGrip(i);
+  const handSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.045, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffcc99, roughness: 0.6 })
+  );
+  grip.add(handSphere);
+  rig.add(grip);
+  handSpheres.push(handSphere);
+
+  // small laser pointer, always visible on the controller
+  const pointerGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -1)
+  ]);
+  const pointer = new THREE.Line(pointerGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }));
+  pointer.scale.z = 0.3;
+  controller.add(pointer);
+
+  // teleport cooldown gauge
+  const indicator = createCooldownIndicator();
+  controller.add(indicator.group);
+  cooldownIndicators.push(indicator);
+
+  controller.addEventListener('selectstart', () => { controller.userData.isSelecting = true; });
+  controller.addEventListener('selectend', () => {
+    controller.userData.isSelecting = false;
+    if (controller.userData.teleportValid && controller.userData.teleportCooldown <= 0) {
+      rig.position.x = controller.userData.teleportPoint.x;
+      rig.position.z = controller.userData.teleportPoint.z;
+      rig.position.y = getGroundHeight(rig.position.x, rig.position.z);
+      controller.userData.teleportCooldown = TELEPORT_COOLDOWN;
+    }
+    teleportMarker.visible = false;
+    teleportLine.visible = false;
+  });
+
+  controller.addEventListener('squeezestart', () => {
+    if (controller.userData.heldCube || controller.userData.heldWeapon) return; // already holding something
+
+    const { pos: controllerPos, quat: controllerQuat } = getControllerWorldPose(controller);
+
+    // prefer whichever is nearer: a small item, or a weapon grab handle
+    let nearestItem = null;
+    let nearestItemDist = GRAB_DISTANCE;
+    for (const itemState of grabbableItems) {
+      if (itemState.grabbedBy === controller) continue;
+      const dist = controllerPos.distanceTo(itemState.mesh.position);
+      if (dist < nearestItemDist) { nearestItem = itemState; nearestItemDist = dist; }
+    }
+
+    const nearestWeaponHandle = findNearestWeaponHandle(controllerPos);
+    const weaponDist = nearestWeaponHandle
+      ? controllerPos.distanceTo((() => { const p = new THREE.Vector3(); nearestWeaponHandle.handle.obj.getWorldPosition(p); return p; })())
+      : Infinity;
+
+    if (nearestWeaponHandle && weaponDist <= nearestItemDist) {
+      grabWeaponHandle(controller, nearestWeaponHandle.weapon, nearestWeaponHandle.handle);
+      handSphere.scale.setScalar(1.15);
+      return;
+    }
+
+    if (!nearestItem) return;
+
+    // if another controller is holding it, free that controller's reference (switching hands)
+    if (nearestItem.grabbedBy && nearestItem.grabbedBy !== controller) {
+      nearestItem.grabbedBy.userData.heldCube = null;
+    }
+
+    // remember the item's pose relative to this controller so it keeps its grabbed offset
+    const invQuat = controllerQuat.clone().invert();
+    nearestItem.grabOffsetPos.copy(nearestItem.mesh.position).sub(controllerPos).applyQuaternion(invQuat);
+    nearestItem.grabOffsetQuat.copy(invQuat).multiply(nearestItem.mesh.quaternion);
+
+    nearestItem.grabbedBy = controller;
+    nearestItem.body.type = CANNON.Body.KINEMATIC;
+    nearestItem.body.velocity.set(0, 0, 0);
+    nearestItem.body.angularVelocity.set(0, 0, 0);
+    controller.userData.heldCube = nearestItem;
+
+    handSphere.scale.setScalar(1.15);
+  });
+
+  controller.addEventListener('squeezeend', () => {
+    handSphere.scale.setScalar(1.0);
+
+    if (controller.userData.heldWeapon) {
+      releaseWeaponHandle(controller);
+    }
+
+    const cubeState = controller.userData.heldCube;
+    if (!cubeState) return;
+
+    cubeState.grabbedBy = null;
+    controller.userData.heldCube = null;
+    cubeState.body.type = CANNON.Body.DYNAMIC;
+    cubeState.body.wakeUp();
+
+    // throw: carry over the hand's tracked linear + angular velocity
+    const throwVel = controller.userData.linearVelocity.clone().multiplyScalar(THROW_MULTIPLIER);
+    cubeState.body.velocity.set(throwVel.x, throwVel.y, throwVel.z);
+    const av = controller.userData.angularVelocity;
+    cubeState.body.angularVelocity.set(av.x, av.y, av.z);
+  });
+}
+
+// ================================================================
+// Teleport marker + aim line
+// ================================================================
+const teleportMarker = new THREE.Mesh(
+  new THREE.RingGeometry(0.25, 0.35, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+);
+teleportMarker.visible = false;
+scene.add(teleportMarker);
+
+const teleportLineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const teleportLine = new THREE.Line(teleportLineGeom, new THREE.LineBasicMaterial({ color: 0x00e5ff }));
+teleportLine.visible = false;
+scene.add(teleportLine);
+
+function updateTeleportAim(controller) {
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+
+  const origin = new THREE.Vector3();
+  controller.getWorldPosition(origin);
+
+  const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+
+  raycaster.ray.origin.copy(origin);
+  raycaster.ray.direction.copy(direction);
+
+  const hits = raycaster.intersectObjects(teleportTargets, false);
+  const onCooldown = controller.userData.teleportCooldown > 0;
+  const color = onCooldown ? 0xff4444 : 0x00e5ff;
+  teleportMarker.material.color.setHex(color);
+  teleportLine.material.color.setHex(color);
+
+  if (hits.length > 0) {
+    const point = hits[0].point;
+    controller.userData.teleportValid = !onCooldown;
+    controller.userData.teleportPoint = point;
+
+    teleportMarker.position.set(point.x, point.y + 0.01, point.z);
+    teleportMarker.visible = true;
+
+    const positions = teleportLine.geometry.attributes.position;
+    positions.setXYZ(0, origin.x, origin.y, origin.z);
+    positions.setXYZ(1, point.x, point.y + 0.02, point.z);
+    positions.needsUpdate = true;
+    teleportLine.visible = true;
+  } else {
+    controller.userData.teleportValid = false;
+    teleportMarker.visible = false;
+    teleportLine.visible = false;
+  }
+}
+
+// ================================================================
+// Angular velocity helper (world-space)
+// ================================================================
+function computeAngularVelocity(prevQuat, curQuat, delta) {
+  const deltaQuat = curQuat.clone().multiply(prevQuat.clone().invert());
+  let w = THREE.MathUtils.clamp(deltaQuat.w, -1, 1);
+  let angle = 2 * Math.acos(w);
+  if (angle > Math.PI) angle -= 2 * Math.PI;
+  const s = Math.sqrt(1 - w * w);
+  const axis = new THREE.Vector3(deltaQuat.x, deltaQuat.y, deltaQuat.z);
+  if (s > 0.0001) axis.divideScalar(s); else axis.set(0, 0, 0);
+  return axis.multiplyScalar(angle / Math.max(delta, 0.0001));
+}
+
+// ================================================================
+// Weapons: pistol / rifle / sword
+// ================================================================
+// Weapons are NOT part of `grabbableItems` (cubes/balls) — they have their own
+// grab handling below, so they are always held in a fixed, correct orientation
+// (grip snaps to a defined "handGrip" transform on the model, rather than being
+// held at whatever offset the hand happened to grab).
+const weaponPhysMaterial = new CANNON.Material('weapon');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, weaponPhysMaterial, { friction: 0.5, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(cubePhysMaterial, weaponPhysMaterial, { friction: 0.4, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(ballPhysMaterial, weaponPhysMaterial, { friction: 0.4, restitution: 0.2 }));
+world.addContactMaterial(new CANNON.ContactMaterial(weaponPhysMaterial, weaponPhysMaterial, { friction: 0.4, restitution: 0.05 }));
+
+const WEAPON_GRAB_DISTANCE = 0.45;
+const weapons = []; // all live weapon instances in the world
+
+// ---- Gun model builder (shared shape for pistol/rifle, scaled/detailed differently) ----
+function buildGunModel(kind) {
+  const group = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0x2b2b31, roughness: 0.35, metalness: 0.85 });
+  const darkGrip = new THREE.MeshStandardMaterial({ color: 0x1a1a1d, roughness: 0.7, metalness: 0.2 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0xd0392b, roughness: 0.4, metalness: 0.3 });
+
+  // Local model space: barrel points down -Z, grip hangs down -Y, model origin sits
+  // roughly where the primary hand grips it.
+  const bodyLen = kind === 'rifle' ? 0.5 : 0.24;
+  const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, bodyLen), metal);
+  bodyMesh.position.set(0, 0.02, -bodyLen / 2 + 0.05);
+  group.add(bodyMesh);
+
+  const barrelLen = kind === 'rifle' ? 0.32 : 0.12;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, barrelLen, 12), metal);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.035, -bodyLen + 0.05 - barrelLen / 2);
+  group.add(barrel);
+
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.12, 0.045), darkGrip);
+  grip.position.set(0, -0.06, 0.05);
+  grip.rotation.x = -0.18;
+  group.add(grip);
+
+  const trigger = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.006, 8, 12, Math.PI), darkGrip);
+  trigger.position.set(0, -0.01, 0.06);
+  trigger.rotation.x = Math.PI;
+  group.add(trigger);
+
+  // muzzle marker (world-space attach point for bullet spawn, at the tip of the barrel)
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0.035, -bodyLen + 0.05 - barrelLen);
+  group.add(muzzle);
+
+  // handle grip attach (primary hand — trigger hand)
+  const handleGrip = new THREE.Object3D();
+  handleGrip.position.copy(grip.position);
+  handleGrip.rotation.copy(grip.rotation);
+  group.add(handleGrip);
+
+  let foreGrip = null;
+  if (kind === 'rifle') {
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.045, 0.16), darkGrip);
+    stock.position.set(0, 0.015, 0.13);
+    group.add(stock);
+
+    const foreGripMesh = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.035), darkGrip);
+    foreGripMesh.position.set(0, -0.03, -0.28);
+    group.add(foreGripMesh);
+
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.02, 0.06), accent);
+    sight.position.set(0, 0.05, -0.05);
+    group.add(sight);
+
+    foreGrip = new THREE.Object3D();
+    foreGrip.position.copy(foreGripMesh.position);
+    group.add(foreGrip);
+  } else {
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.015, 0.02), accent);
+    sight.position.set(0, 0.05, -0.16);
+    group.add(sight);
+  }
+
+  return { group, muzzle, handleGrip, foreGrip, bodyLen };
+}
+
+function buildSwordModel() {
+  const group = new THREE.Group();
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.25, metalness: 0.9 });
+  const hiltMat = new THREE.MeshStandardMaterial({ color: 0x4a3222, roughness: 0.7, metalness: 0.1 });
+  const guardMat = new THREE.MeshStandardMaterial({ color: 0xb8860b, roughness: 0.4, metalness: 0.7 });
+
+  const bladeLen = 0.55;
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, bladeLen), bladeMat);
+  blade.position.set(0, 0, -bladeLen / 2 - 0.05);
+  group.add(blade);
+
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.06, 4), bladeMat);
+  tip.rotation.x = -Math.PI / 2;
+  tip.rotation.y = Math.PI / 4;
+  tip.position.set(0, 0, -bladeLen - 0.05 - 0.02);
+  group.add(tip);
+
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.02, 0.03), guardMat);
+  guard.position.set(0, 0, -0.02);
+  group.add(guard);
+
+  // handle is long enough for a two-handed grip
+  const handleLen = 0.2;
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, handleLen, 10), hiltMat);
+  handle.rotation.x = Math.PI / 2;
+  handle.position.set(0, 0, 0.02 + handleLen / 2);
+  group.add(handle);
+
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), guardMat);
+  pommel.position.set(0, 0, 0.02 + handleLen);
+  group.add(pommel);
+
+  // primary grip (front, near guard) and secondary grip (rear, near pommel) for two-handing
+  const handleGrip = new THREE.Object3D();
+  handleGrip.position.set(0, 0, 0.06);
+  group.add(handleGrip);
+
+  const rearGrip = new THREE.Object3D();
+  rearGrip.position.set(0, 0, 0.02 + handleLen - 0.03);
+  group.add(rearGrip);
+
+  return { group, handleGrip, rearGrip, bladeLen, tipLocalZ: -bladeLen - 0.07 };
+}
+
+function makeWeaponPhysBody(kind) {
+  if (kind === 'sword') {
+    return new CANNON.Body({
+      mass: 3.2, // heavy
+      material: weaponPhysMaterial,
+      shape: new CANNON.Box(new CANNON.Vec3(0.03, 0.02, 0.4)),
+      linearDamping: 0.2,
+      angularDamping: 0.6
+    });
+  }
+  const len = kind === 'rifle' ? 0.55 : 0.28;
+  return new CANNON.Body({
+    mass: kind === 'rifle' ? 1.4 : 0.6,
+    material: weaponPhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(0.05, 0.07, len / 2)),
+    linearDamping: 0.1,
+    angularDamping: 0.4
+  });
+}
+
+function spawnWeapon(kind, position) {
+  let model;
+  if (kind === 'sword') model = buildSwordModel();
+  else model = buildGunModel(kind);
+
+  model.group.position.copy(position);
+  scene.add(model.group);
+
+  const body = makeWeaponPhysBody(kind);
+  body.position.set(position.x, position.y, position.z);
+  world.addBody(body);
+
+  const weapon = {
+    kind, // 'pistol' | 'rifle' | 'sword'
+    model,
+    body,
+    // grabHandles: named attach points a hand can lock onto, each with a local offset transform
+    // relative to the model group. Grabbing snaps the hand to these exact poses (fixed hold),
+    // rather than an arbitrary hand-relative offset.
+    heldBy: {}, // handleName -> controller
+    fireCooldown: 0,
+    swingDamageCooldown: 0,
+    isEquippedWeapon: true
+  };
+  weapons.push(weapon);
+  return weapon;
+}
+
+// Returns the list of {name, localPos, localQuat, twoHandedAllowed} grab handles for a weapon kind.
+function getWeaponHandles(weapon) {
+  if (weapon.kind === 'sword') {
+    return [
+      { name: 'handle', obj: weapon.model.handleGrip, allowShoot: false },
+      { name: 'rear', obj: weapon.model.rearGrip, allowShoot: false }
+    ];
+  }
+  const handles = [{ name: 'handle', obj: weapon.model.handleGrip, allowShoot: true }];
+  if (weapon.model.foreGrip) handles.push({ name: 'grip', obj: weapon.model.foreGrip, allowShoot: false });
+  return handles;
+}
+
+function findNearestWeaponHandle(controllerPos) {
+  let best = null;
+  let bestDist = WEAPON_GRAB_DISTANCE;
+  for (const weapon of weapons) {
+    if (weapon.consumedInCraft) continue;
+    for (const h of getWeaponHandles(weapon)) {
+      if (weapon.heldBy[h.name]) continue; // already held
+      const worldPos = new THREE.Vector3();
+      h.obj.getWorldPosition(worldPos);
+      const dist = controllerPos.distanceTo(worldPos);
+      if (dist < bestDist) { bestDist = dist; best = { weapon, handle: h }; }
+    }
+  }
+  return best;
+}
+
+function weaponHandleCount(weapon) {
+  return Object.keys(weapon.heldBy).filter(k => weapon.heldBy[k]).length;
+}
+
+function grabWeaponHandle(controller, weapon, handle) {
+  weapon.heldBy[handle.name] = controller;
+  controller.userData.heldWeapon = { weapon, handleName: handle.name };
+
+  // becoming held (by at least one hand) makes the body kinematic so we can drive it directly
+  weapon.body.type = CANNON.Body.KINEMATIC;
+  weapon.body.velocity.set(0, 0, 0);
+  weapon.body.angularVelocity.set(0, 0, 0);
+
+  // sword: hold with both hands without switching -> if grabbing the second grip, keep the first
+  // hand's grip too (two-handing), and lower effective weight while both hands are on it.
+  if (weapon.kind === 'sword' && !weapon.handLagPos) {
+    weapon.handLagPos = new THREE.Vector3().copy(weapon.model.group.position);
+    weapon.handLagQuat = new THREE.Quaternion().copy(weapon.model.group.quaternion);
+  }
+}
+
+function releaseWeaponHandle(controller) {
+  const held = controller.userData.heldWeapon;
+  if (!held) return;
+  const { weapon, handleName } = held;
+  weapon.heldBy[handleName] = null;
+  controller.userData.heldWeapon = null;
+
+  if (weaponHandleCount(weapon) === 0) {
+    // fully let go — hand it back to normal dynamic physics, throw with tracked hand velocity
+    weapon.body.type = CANNON.Body.DYNAMIC;
+    weapon.body.wakeUp();
+    const throwVel = controller.userData.linearVelocity.clone().multiplyScalar(THROW_MULTIPLIER);
+    weapon.body.velocity.set(throwVel.x, throwVel.y, throwVel.z);
+    const av = controller.userData.angularVelocity;
+    weapon.body.angularVelocity.set(av.x, av.y, av.z);
+    weapon.handLagPos = null;
+    weapon.handLagQuat = null;
+  }
+}
+
+// Computes the world transform the weapon SHOULD have, given which grip(s) are held,
+// by solving for the group transform that places the primary handle at the primary hand's pose.
+function computeWeaponTargetTransform(weapon) {
+  // Prefer the 'handle' grip as the primary reference point (it's the trigger/main hand for
+  // guns, and the front grip for the sword); fall back to whichever grip is actually held.
+  const primaryController = weapon.heldBy.handle || weapon.heldBy[Object.keys(weapon.heldBy).find(k => weapon.heldBy[k])];
+  if (!primaryController) return null;
+
+  const { pos: handPos, quat: handQuat } = getControllerWorldPose(primaryController);
+
+  // local offset of the primary handle relative to the model group's own origin/orientation
+  const handles = getWeaponHandles(weapon);
+  const primaryHandle = handles.find(h => weapon.heldBy[h.name] === primaryController) || handles[0];
+  const localPos = primaryHandle.obj.position;
+  const localQuat = primaryHandle.obj.quaternion;
+
+  // desired group orientation = handQuat * inverse(localQuat)  (so localQuat rotated by result == handQuat)
+  const targetQuat = handQuat.clone().multiply(localQuat.clone().invert());
+  // desired group position = handPos - (localPos rotated by targetQuat)
+  const rotatedLocal = localPos.clone().applyQuaternion(targetQuat);
+  const targetPos = handPos.clone().sub(rotatedLocal);
+
+  // Rifle two-handed aim assist: if the fore-grip is also held, bias orientation so the barrel
+  // (local -Z axis) points toward the fore-grip hand, like actually gripping a rifle with both
+  // hands along its length. Built directly from an orthonormal basis rather than a lookAt() call,
+  // so the forward-axis convention is unambiguous.
+  if (weapon.kind === 'rifle' && weapon.heldBy.grip && weapon.heldBy.handle) {
+    const { pos: forePos } = getControllerWorldPose(weapon.heldBy.grip);
+    const desiredForward = forePos.clone().sub(targetPos).normalize(); // barrel should point this way
+    if (desiredForward.lengthSq() > 0.0001) {
+      const refUp = new THREE.Vector3(0, 1, 0).applyQuaternion(targetQuat);
+      let right = new THREE.Vector3().crossVectors(desiredForward, refUp);
+      if (right.lengthSq() < 0.0001) right = new THREE.Vector3(1, 0, 0).applyQuaternion(targetQuat);
+      right.normalize();
+      const up = new THREE.Vector3().crossVectors(right, desiredForward).normalize();
+      // local -Z = desiredForward, local +Y = up, local +X = right
+      const basis = new THREE.Matrix4().makeBasis(right, up, desiredForward.clone().negate());
+      const lookQuat = new THREE.Quaternion().setFromRotationMatrix(basis);
+      // blend mostly toward the two-hand look direction for a stable, realistic hold
+      targetQuat.slerp(lookQuat, 0.85);
+      const rotatedLocal2 = localPos.clone().applyQuaternion(targetQuat);
+      targetPos.copy(handPos).sub(rotatedLocal2);
+    }
+  }
+
+  return { pos: targetPos, quat: targetQuat };
+}
+
+const SWORD_HAND_LAG_ONE_HANDED = 7.0;  // lower = heavier/more lag when swung fast
+const SWORD_HAND_LAG_TWO_HANDED = 13.0; // two hands makes it easier to swing (less lag)
+
+function driveHeldWeapons(delta) {
+  for (const weapon of weapons) {
+    if (weaponHandleCount(weapon) === 0) continue;
+    const target = computeWeaponTargetTransform(weapon);
+    if (!target) continue;
+
+    if (weapon.kind === 'sword') {
+      // Weight simulation: the sword's actual pose lags behind the target (hand) pose,
+      // more so with fast motion and one-handed grip — i.e. swing too fast and the blade
+      // trails behind the hand instead of snapping instantly to it.
+      const twoHanded = weaponHandleCount(weapon) >= 2;
+      const lagSpeed = twoHanded ? SWORD_HAND_LAG_TWO_HANDED : SWORD_HAND_LAG_ONE_HANDED;
+      const lerpAmount = THREE.MathUtils.clamp(lagSpeed * delta, 0, 1);
+      weapon.handLagPos.lerp(target.pos, lerpAmount);
+      weapon.handLagQuat.slerp(target.quat, lerpAmount);
+      weapon.body.position.set(weapon.handLagPos.x, weapon.handLagPos.y, weapon.handLagPos.z);
+      weapon.body.quaternion.set(weapon.handLagQuat.x, weapon.handLagQuat.y, weapon.handLagQuat.z, weapon.handLagQuat.w);
+    } else {
+      // guns: fixed, instant hold (no arbitrary offset — always held correctly)
+      weapon.body.position.set(target.pos.x, target.pos.y, target.pos.z);
+      weapon.body.quaternion.set(target.quat.x, target.quat.y, target.quat.z, target.quat.w);
+    }
+
+    if (weapon.fireCooldown > 0) weapon.fireCooldown = Math.max(0, weapon.fireCooldown - delta);
+    if (weapon.swingDamageCooldown > 0) weapon.swingDamageCooldown = Math.max(0, weapon.swingDamageCooldown - delta);
+  }
+}
+
+// ================================================================
+// Shooting
+// ================================================================
+const FIRE_COOLDOWN_PISTOL = 0.7;
+const FIRE_COOLDOWN_RIFLE = 0.4;
+const BULLET_SPEED_PISTOL = 9;
+const BULLET_SPEED_RIFLE = 16;
+const RIFLE_SPREAD_HIP = 0.09;      // radians, one-handed
+const RIFLE_SPREAD_AIMED = 0.015;   // radians, held with both grip + handle
+
+function tryFireHeldWeapon(controller) {
+  const held = controller.userData.heldWeapon;
+  if (!held) return;
+  const { weapon, handleName } = held;
+
+  // only the trigger/"handle" grip can fire
+  const handles = getWeaponHandles(weapon);
+  const handleInfo = handles.find(h => h.name === handleName);
+  if (!handleInfo || !handleInfo.allowShoot) return;
+  if (weapon.kind === 'sword') return; // swords don't shoot
+  if (weapon.fireCooldown > 0) return;
+
+  const muzzlePos = new THREE.Vector3();
+  weapon.model.muzzle.getWorldPosition(muzzlePos);
+  const muzzleDir = new THREE.Vector3(0, 0, -1);
+  weapon.model.group.getWorldQuaternion(_tmpQuat);
+  muzzleDir.applyQuaternion(_tmpQuat);
+
+  let speed = BULLET_SPEED_PISTOL;
+  weapon.fireCooldown = FIRE_COOLDOWN_PISTOL;
+
+  if (weapon.kind === 'rifle') {
+    speed = BULLET_SPEED_RIFLE;
+    weapon.fireCooldown = FIRE_COOLDOWN_RIFLE;
+    const aimed = !!weapon.heldBy.grip; // holding the fore-grip lowers spread significantly
+    const spread = aimed ? RIFLE_SPREAD_AIMED : RIFLE_SPREAD_HIP;
+    // small random cone deviation around the aim direction
+    const jitterYaw = (Math.random() - 0.5) * 2 * spread;
+    const jitterPitch = (Math.random() - 0.5) * 2 * spread;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_tmpQuat);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_tmpQuat);
+    muzzleDir.applyAxisAngle(right, jitterPitch).applyAxisAngle(up, jitterYaw).normalize();
+  }
+
+  spawnBullet(muzzlePos, muzzleDir, speed);
+}
+const _tmpQuat = new THREE.Quaternion();
+
+// Place the initial pistol at the top of the slope, as requested.
+// The top platform spans TOP_X_MIN..TOP_X_MAX and TOP_Z_MIN..TOP_Z_MAX at height RAMP_HEIGHT;
+// rest the pistol just above its surface, near the platform's center.
+const startingPistol = spawnWeapon('pistol', new THREE.Vector3(0.8, RAMP_HEIGHT + 0.15, (TOP_Z_MIN + TOP_Z_MAX) / 2));
+startingPistol.body.quaternion.setFromEuler(0, Math.PI, 0);
+
+// ================================================================
+// Bullets — small fast spheres, velocity-based damage, craftable
+// ================================================================
+const BULLET_RADIUS = 0.035;
+const bullets = []; // { mesh, body, spawnTime, spawnedFromWeapon }
+const bulletPhysMaterial = new CANNON.Material('bullet');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, bulletPhysMaterial, { friction: 0.3, restitution: 0.1 }));
+world.addContactMaterial(new CANNON.ContactMaterial(bulletPhysMaterial, bulletPhysMaterial, { friction: 0.3, restitution: 0.1 }));
+
+function spawnBullet(originPos, direction, speed) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(BULLET_RADIUS, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xfff2b0, emissive: 0xffaa00, emissiveIntensity: 0.6, roughness: 0.3 })
+  );
+  mesh.position.copy(originPos);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: 0.02,
+    material: bulletPhysMaterial,
+    shape: new CANNON.Sphere(BULLET_RADIUS),
+    linearDamping: 0.01,
+    angularDamping: 0.1
+  });
+  body.position.set(originPos.x, originPos.y, originPos.z);
+  const vel = direction.clone().normalize().multiplyScalar(speed);
+  body.velocity.set(vel.x, vel.y, vel.z);
+  world.addBody(body);
+
+  const bulletState = {
+    mesh, body,
+    isBullet: true, // special variable used by the crafting table to detect a bullet hit
+    spawnTime: simTime,
+    hitDummyRecently: 0
+  };
+  bullets.push(bulletState);
+  return bulletState;
+}
+
+const BULLET_LIFETIME = 4.0; // seconds before a stray bullet is cleaned up
+
+// ================================================================
+// Crafting table
+// ================================================================
+const CRAFT_TABLE_POS = new THREE.Vector3(4.5, 0, 3.5);
+const CRAFT_SURFACE_Y = 0.55; // top surface height
+const CRAFT_ZONE_RADIUS = 0.55;
+
+const craftRecipes = {
+  pistol: { label: 'Pistol', cubes: 2, balls: 1 },
+  rifle:  { label: 'Rifle',  cubes: 4, balls: 2 },
+  sword:  { label: 'Sword',  cubes: 1, balls: 3 }
+};
+const recipeOrder = ['pistol', 'rifle', 'sword'];
+let selectedRecipe = 'pistol';
+
+const craftTableGroup = new THREE.Group();
+craftTableGroup.position.copy(CRAFT_TABLE_POS);
+scene.add(craftTableGroup);
+
+const tableTopMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(1.1, 0.08, 1.1),
+  new THREE.MeshStandardMaterial({ color: 0x7b5230, roughness: 0.8 })
+);
+tableTopMesh.position.y = CRAFT_SURFACE_Y;
+craftTableGroup.add(tableTopMesh);
+
+const legGeo = new THREE.BoxGeometry(0.08, CRAFT_SURFACE_Y - 0.04, 0.08);
+const legMat = new THREE.MeshStandardMaterial({ color: 0x5c3d20, roughness: 0.85 });
+for (const [lx, lz] of [[0.48, 0.48], [-0.48, 0.48], [0.48, -0.48], [-0.48, -0.48]]) {
+  const leg = new THREE.Mesh(legGeo, legMat);
+  leg.position.set(lx, (CRAFT_SURFACE_Y - 0.04) / 2, lz);
+  craftTableGroup.add(leg);
+}
+
+// static physics body so items can rest on the table
+const craftTableBody = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+craftTableBody.addShape(new CANNON.Box(new CANNON.Vec3(0.55, 0.04, 0.55)), new CANNON.Vec3(0, CRAFT_SURFACE_Y, 0));
+for (const [lx, lz] of [[0.48, 0.48], [-0.48, 0.48], [0.48, -0.48], [-0.48, -0.48]]) {
+  craftTableBody.addShape(new CANNON.Box(new CANNON.Vec3(0.04, (CRAFT_SURFACE_Y - 0.04) / 2, 0.04)), new CANNON.Vec3(lx, (CRAFT_SURFACE_Y - 0.04) / 2, lz));
+}
+craftTableBody.position.set(CRAFT_TABLE_POS.x, CRAFT_TABLE_POS.y, CRAFT_TABLE_POS.z);
+world.addBody(craftTableBody);
+teleportTargets.push(tableTopMesh); // let players teleport onto the table area's floor level too (harmless)
+
+// --- Recipe select button (a pressable panel on the front edge of the table) ---
+const recipeButtonGroup = new THREE.Group();
+recipeButtonGroup.position.set(0, CRAFT_SURFACE_Y + 0.04, 0.62);
+craftTableGroup.add(recipeButtonGroup);
+
+const recipeButtonBase = new THREE.Mesh(
+  new THREE.BoxGeometry(0.3, 0.08, 0.05),
+  new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.6 })
+);
+recipeButtonGroup.add(recipeButtonBase);
+
+// Canvas-based label so we can show the current recipe text and update it live.
+const labelCanvas = document.createElement('canvas');
+labelCanvas.width = 256; labelCanvas.height = 64;
+const labelCtx = labelCanvas.getContext('2d');
+const labelTexture = new THREE.CanvasTexture(labelCanvas);
+
+function drawRecipeLabel() {
+  const r = craftRecipes[selectedRecipe];
+  labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+  labelCtx.fillStyle = '#222';
+  labelCtx.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
+  labelCtx.fillStyle = '#fff';
+  labelCtx.font = 'bold 26px sans-serif';
+  labelCtx.textAlign = 'center';
+  labelCtx.fillText(r.label, labelCanvas.width / 2, 28);
+  labelCtx.font = '18px sans-serif';
+  const cubeWord = r.cubes === 1 ? 'cube' : 'cubes';
+  const ballWord = r.balls === 1 ? 'ball' : 'balls';
+  labelCtx.fillText(`${r.cubes} ${cubeWord}, ${r.balls} ${ballWord}`, labelCanvas.width / 2, 52);
+  labelTexture.needsUpdate = true;
+}
+drawRecipeLabel();
+
+const recipeLabelMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.28, 0.07),
+  new THREE.MeshBasicMaterial({ map: labelTexture })
+);
+recipeLabelMesh.position.set(0, 0, 0.026);
+recipeButtonGroup.add(recipeLabelMesh);
+
+function cycleRecipe() {
+  const idx = recipeOrder.indexOf(selectedRecipe);
+  selectedRecipe = recipeOrder[(idx + 1) % recipeOrder.length];
+  drawRecipeLabel();
+  // small press feedback
+  recipeButtonGroup.position.z -= 0.015;
+  setTimeout(() => { recipeButtonGroup.position.z += 0.015; }, 120);
+}
+
+// The button is pressed by touching it with a hand (sphere) — checked each frame below.
+let recipeButtonCooldown = 0;
+
+// --- Craft resolution: consumes items resting on the table when it's shot with a bullet ---
+function tryCraftFromTable() {
+  const r = craftRecipes[selectedRecipe];
+
+  // gather cubes/balls currently resting on (near) the table surface
+  const onTable = grabbableItems.filter(item => {
+    if (item.grabbedBy) return false; // must be placed down, not held
+    const p = item.mesh.position;
+    const dx = p.x - CRAFT_TABLE_POS.x, dz = p.z - CRAFT_TABLE_POS.z;
+    const horizDist = Math.sqrt(dx * dx + dz * dz);
+    const onSurface = p.y > CRAFT_SURFACE_Y + 0.02 && p.y < CRAFT_SURFACE_Y + 0.4;
+    return onSurface && horizDist < CRAFT_ZONE_RADIUS;
+  });
+
+  const cubesOnTable = onTable.filter(i => i.itemType === 'cube');
+  const ballsOnTable = onTable.filter(i => i.itemType === 'ball');
+
+  if (cubesOnTable.length < r.cubes || ballsOnTable.length < r.balls) {
+    return false; // not enough materials
+  }
+
+  // consume exactly the required amount
+  for (let i = 0; i < r.cubes; i++) removeGrabbableItem(cubesOnTable[i]);
+  for (let i = 0; i < r.balls; i++) removeGrabbableItem(ballsOnTable[i]);
+
+  const spawnPos = new THREE.Vector3(CRAFT_TABLE_POS.x, CRAFT_SURFACE_Y + CRAFT_TABLE_POS.y + 0.15, CRAFT_TABLE_POS.z);
+  const newWeapon = spawnWeapon(selectedRecipe, spawnPos);
+  newWeapon.body.velocity.set(0, 1.5, 0);
+  return true;
+}
+
+function removeGrabbableItem(item) {
+  scene.remove(item.mesh);
+  world.removeBody(item.body);
+  const idx = grabbableItems.indexOf(item);
+  if (idx !== -1) grabbableItems.splice(idx, 1);
+  const cIdx = cubes.indexOf(item);
+  if (cIdx !== -1) cubes.splice(cIdx, 1);
+  const bIdx = balls.indexOf(item);
+  if (bIdx !== -1) balls.splice(bIdx, 1);
+}
+
+// ================================================================
+// Target dummy — velocity-based damage readout
+// ================================================================
+const DUMMY_POS = new THREE.Vector3(-4, 0, -2);
+const DUMMY_HIT_IMMUNITY = 0.1; // seconds
+
+const dummyGroup = new THREE.Group();
+dummyGroup.position.copy(DUMMY_POS);
+scene.add(dummyGroup);
+
+const dummyMat = new THREE.MeshStandardMaterial({ color: 0xb5895a, roughness: 0.9 });
+const dummyPoleMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.6, metalness: 0.4 });
+
+const dummyPole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.5, 10), dummyPoleMat);
+dummyPole.position.y = 0.75;
+dummyGroup.add(dummyPole);
+
+const dummyTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.55, 6, 12), dummyMat);
+dummyTorso.position.y = 1.15;
+dummyGroup.add(dummyTorso);
+
+const dummyHead = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 12), dummyMat);
+dummyHead.position.y = 1.62;
+dummyGroup.add(dummyHead);
+
+const dummyArmGeo = new THREE.CapsuleGeometry(0.06, 0.4, 4, 8);
+const armL = new THREE.Mesh(dummyArmGeo, dummyMat);
+armL.position.set(-0.32, 1.25, 0);
+armL.rotation.z = Math.PI / 2.4;
+dummyGroup.add(armL);
+const armR = new THREE.Mesh(dummyArmGeo, dummyMat);
+armR.position.set(0.32, 1.25, 0);
+armR.rotation.z = -Math.PI / 2.4;
+dummyGroup.add(armR);
+
+const dummyBody = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+dummyBody.addShape(new CANNON.Cylinder(0.04, 0.04, 1.5, 10), new CANNON.Vec3(0, 0.75, 0));
+dummyBody.addShape(new CANNON.Sphere(0.3), new CANNON.Vec3(0, 1.15, 0)); // approx hit volume for torso+arms
+dummyBody.addShape(new CANNON.Sphere(0.16), new CANNON.Vec3(0, 1.62, 0));
+dummyBody.position.set(DUMMY_POS.x, DUMMY_POS.y, DUMMY_POS.z);
+world.addBody(dummyBody);
+
+let dummyLastHitTime = -999;
+
+// Generic physical-impact damage: any body that collides with the dummy deals damage based on
+// the impact speed at the moment of collision (all damage in this game is velocity-derived).
+dummyBody.addEventListener('collide', (evt) => {
+  const otherBody = evt.body;
+  const contact = evt.contact;
+  if (!contact) return;
+  // relative velocity along the contact normal at the moment of impact
+  const relVel = Math.abs(contact.getImpactVelocityAlongNormal ? contact.getImpactVelocityAlongNormal() : 0);
+  if (relVel < 0.4) return; // ignore gentle resting contact / negligible taps
+  const contactPointWorld = new THREE.Vector3(
+    dummyBody.position.x + (contact.ri ? contact.ri.x : 0),
+    dummyBody.position.y + (contact.ri ? contact.ri.y : 0),
+    dummyBody.position.z + (contact.ri ? contact.ri.z : 0)
+  );
+  const vel = new THREE.Vector3(otherBody.velocity.x, otherBody.velocity.y, otherBody.velocity.z);
+  // scale factor differs slightly from the bullet/sword path since this uses raw impact speed
+  damageDummyFromImpact(contactPointWorld, relVel, simTime);
+});
+
+function damageDummyFromImpact(hitPos, speed, nowTime) {
+  if (nowTime - dummyLastHitTime < DUMMY_HIT_IMMUNITY) return;
+  dummyLastHitTime = nowTime;
+  const damage = speed * 1.2;
+  spawnDamagePopup(hitPos, damage);
+}
+
+// Floating damage number sprites
+const damagePopups = []; // { sprite, life }
+function spawnDamagePopup(worldPos, amount) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 40px sans-serif';
+  ctx.fillStyle = '#ff3b30';
+  ctx.textAlign = 'center';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 4;
+  const text = amount.toFixed(1);
+  ctx.strokeText(text, 64, 40);
+  ctx.fillText(text, 64, 40);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(0.4, 0.2, 1);
+  sprite.position.copy(worldPos);
+  sprite.position.y += 0.1;
+  scene.add(sprite);
+  damagePopups.push({ sprite, life: 1.0 });
+}
+
+// Called whenever something with a known velocity strikes the dummy.
+function damageDummy(hitPos, velocity, nowTime) {
+  if (nowTime - dummyLastHitTime < DUMMY_HIT_IMMUNITY) return;
+  dummyLastHitTime = nowTime;
+  const speed = velocity.length();
+  const damage = speed * 1.2; // all damage is derived from impact velocity
+  spawnDamagePopup(hitPos, damage);
+}
+
+// ================================================================
+// Face buttons (X/Y on left controller, A/B on right controller)
+// xr-standard gamepad mapping: buttons[4] = X (left) / A (right), buttons[5] = Y (left) / B (right)
+// ================================================================
+const TAP_WINDOW = 2.0;   // seconds
+const TAPS_REQUIRED = 3;
+const SPAWN_FORWARD_OFFSET = 0.12; // spawn slightly in front of the palm so it doesn't overlap the hand
+
+function getHandForwardSpawnPos(controller) {
+  const { pos, quat } = getControllerWorldPose(controller);
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  return pos.clone().addScaledVector(dir, SPAWN_FORWARD_OFFSET);
+}
+
+function registerTap(controller, now) {
+  const times = controller.userData.tapTimes;
+  times.push(now);
+  while (times.length > 0 && now - times[0] > TAP_WINDOW) times.shift();
+  return times.length >= TAPS_REQUIRED;
+}
+
+function updateFaceButtons(now) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+
+  for (const source of session.inputSources) {
+    if (!source.gamepad) continue;
+    const controller = controllers.find(c => c.userData.handedness === source.handedness);
+    if (!controller) continue;
+
+    const buttons = source.gamepad.buttons;
+    // xr-standard mapping: index 4 = X on the left controller / A on the right controller.
+    //                       index 5 = Y on the left controller / B on the right controller.
+    const xOrABtn = buttons[4];
+    const yOrBBtn = buttons[5];
+    const prev = controller.userData.prevButtons;
+
+    const xOrAPressed = !!(xOrABtn && xOrABtn.pressed);
+    const yOrBPressed = !!(yOrBBtn && yOrBBtn.pressed);
+    const prevXOrA = prev[4] || false;
+    const prevYOrB = prev[5] || false;
+    const justPressedXOrA = xOrAPressed && !prevXOrA;
+    const justPressedYOrB = yOrBPressed && !prevYOrB;
+
+    // Y (left controller) triple-tap within 2s -> spawn a cube at that hand.
+    if (source.handedness === 'left' && justPressedYOrB) {
+      if (registerTap(controller, now)) {
+        spawnCubeAtPosition(getHandForwardSpawnPos(controller));
+        controller.userData.tapTimes.length = 0;
+      }
+    }
+
+    // X (left controller) triple-tap within 2s -> spawn a ball at that hand.
+    if (source.handedness === 'left' && justPressedXOrA) {
+      controller.userData.xTapTimes = controller.userData.xTapTimes || [];
+      const times = controller.userData.xTapTimes;
+      times.push(now);
+      while (times.length > 0 && now - times[0] > TAP_WINDOW) times.shift();
+      if (times.length >= TAPS_REQUIRED) {
+        spawnBallAtPosition(getHandForwardSpawnPos(controller));
+        times.length = 0;
+      }
+    }
+
+    // X (left) or A (right) fires whichever gun that hand is holding by its trigger grip.
+    // Pistol: single shot per press. Rifle: single shot per press, PLUS automatic fire while held.
+    const held = controller.userData.heldWeapon;
+    if (held && held.weapon.kind !== 'sword') {
+      if (justPressedXOrA) tryFireHeldWeapon(controller);
+      else if (xOrAPressed && held.weapon.kind === 'rifle') tryFireHeldWeapon(controller);
+    }
+
+    prev[4] = xOrAPressed;
+    prev[5] = yOrBPressed;
+  }
+}
+
+// ================================================================
+// Locomotion (thumbsticks) + collision (player only — cubes use cannon-es)
+// ================================================================
+const MOVE_SPEED = 2.5;
+const TURN_SPEED = 2.0; // rad/sec
+const DEADZONE = 0.15;
+const MAX_STEP = 0.5; // max height change allowed per axis-move -> blocks walking into the side of the ramp
+const worldUp = new THREE.Vector3(0, 1, 0);
+
+function applyDeadzone(v) { return Math.abs(v) < DEADZONE ? 0 : v; }
+
+function rotateRigAroundHead(angle) {
+  const pivot = new THREE.Vector3();
+  camera.getWorldPosition(pivot);
+  rig.position.sub(pivot);
+  rig.position.applyAxisAngle(worldUp, angle);
+  rig.rotation.y += angle;
+  rig.position.add(pivot);
+}
+
+function attemptAxisMove(axis, delta) {
+  const candidate = rig.position[axis] + delta;
+  const testX = axis === 'x' ? candidate : rig.position.x;
+  const testZ = axis === 'z' ? candidate : rig.position.z;
+
+  const halfBound = PLATFORM_SIZE / 2 - 0.3;
+  if (testX < -halfBound || testX > halfBound || testZ < -halfBound || testZ > halfBound) return;
+
+  const curGroundH = getGroundHeight(rig.position.x, rig.position.z);
+  const newGroundH = getGroundHeight(testX, testZ);
+  if (Math.abs(newGroundH - curGroundH) <= MAX_STEP) {
+    rig.position[axis] = candidate;
+  }
+}
+
+function updateLocomotion(delta) {
+  let leftX = 0, leftY = 0, rightX = 0, rightY = 0;
+  const session = renderer.xr.getSession();
+  if (session) {
+    for (const source of session.inputSources) {
+      if (!source.gamepad) continue;
+      const axes = source.gamepad.axes;
+      const x = axes.length >= 4 ? axes[2] : axes[0];
+      const y = axes.length >= 4 ? axes[3] : axes[1];
+      if (source.handedness === 'left') { leftX = applyDeadzone(x || 0); leftY = applyDeadzone(y || 0); }
+      else if (source.handedness === 'right') { rightX = applyDeadzone(x || 0); rightY = applyDeadzone(y || 0); }
+    }
+  }
+
+  // turning
+  if (rightX !== 0) {
+    rotateRigAroundHead(-rightX * TURN_SPEED * delta);
+  }
+
+  // moving, relative to where the player is looking (horizontal only)
+  if (leftX !== 0 || leftY !== 0) {
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    if (forward.lengthSq() > 0.0001) forward.normalize();
+    const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+
+    const moveX = (right.x * leftX + forward.x * -leftY) * MOVE_SPEED * delta;
+    const moveZ = (right.z * leftX + forward.z * -leftY) * MOVE_SPEED * delta;
+
+    attemptAxisMove('x', moveX);
+    attemptAxisMove('z', moveZ);
+  }
+
+  rig.position.y = getGroundHeight(rig.position.x, rig.position.z);
+}
+
+// ================================================================
+// Render / physics loop
+// ================================================================
+const clock = new THREE.Clock();
+const FIXED_TIMESTEP = 1 / 60;
+
+renderer.setAnimationLoop(() => {
+  const delta = Math.min(clock.getDelta(), 0.05);
+  simTime += delta;
+
+  updateLocomotion(delta);
+  updateFaceButtons(simTime);
+
+  // track controller linear/angular velocity (used for throwing) + move held cubes
+  for (const controller of controllers) {
+    const { pos: curPos, quat: curQuat } = getControllerWorldPose(controller);
+    if (controller.userData.prevPos) {
+      controller.userData.linearVelocity
+        .copy(curPos).sub(controller.userData.prevPos).divideScalar(Math.max(delta, 0.0001));
+      controller.userData.angularVelocity
+        .copy(computeAngularVelocity(controller.userData.prevQuat, curQuat, delta));
+    }
+    controller.userData.prevPos = curPos;
+    controller.userData.prevQuat = curQuat;
+
+    // teleport cooldown countdown
+    if (controller.userData.teleportCooldown > 0) {
+      controller.userData.teleportCooldown = Math.max(0, controller.userData.teleportCooldown - delta);
+    }
+
+    // drive the held cube/ball's kinematic body from the controller pose + grab offset
+    const held = controller.userData.heldCube;
+    if (held) {
+      const newPos = held.grabOffsetPos.clone().applyQuaternion(curQuat).add(curPos);
+      const newQuat = curQuat.clone().multiply(held.grabOffsetQuat);
+      held.body.position.set(newPos.x, newPos.y, newPos.z);
+      held.body.quaternion.set(newQuat.x, newQuat.y, newQuat.z, newQuat.w);
+    }
+  }
+
+  // drive held weapons (fixed hold for guns, weighted hand-lag for the sword)
+  driveHeldWeapons(delta);
+
+  // cooldown gauges
+  for (let i = 0; i < controllers.length; i++) {
+    const indicator = cooldownIndicators[i];
+    const cd = controllers[i].userData.teleportCooldown;
+    if (cd > 0) {
+      indicator.group.visible = true;
+      indicator.fill.scale.x = Math.max(0.001, 1 - cd / TELEPORT_COOLDOWN);
+    } else {
+      indicator.group.visible = false;
+    }
+  }
+
+  // teleport aiming, only for whichever controller currently has trigger held
+  let aiming = false;
+  for (const controller of controllers) {
+    if (controller.userData.isSelecting) {
+      updateTeleportAim(controller);
+      aiming = true;
+    }
+  }
+  if (!aiming) {
+    teleportMarker.visible = false;
+    teleportLine.visible = false;
+  }
+
+  // step the physics world
+  world.step(FIXED_TIMESTEP, delta, 5);
+
+  // controller world positions, reused below for the grab-highlight check
+  const controllerWorldPositions = controllers.map(c => {
+    const p = new THREE.Vector3();
+    c.getWorldPosition(p);
+    return p;
+  });
+
+  // sync meshes with physics bodies + highlight, for both cubes and balls
+  for (const itemState of grabbableItems) {
+    const mesh = itemState.mesh;
+    const body = itemState.body;
+
+    mesh.position.set(body.position.x, body.position.y, body.position.z);
+    mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+
+    if (itemState.grabbedBy) {
+      itemState.highlightAmount = THREE.MathUtils.lerp(itemState.highlightAmount, 0, 0.3);
+    } else {
+      let inReach = false;
+      for (const cp of controllerWorldPositions) {
+        if (cp.distanceTo(mesh.position) < GRAB_DISTANCE) { inReach = true; break; }
+      }
+      itemState.highlightAmount = THREE.MathUtils.lerp(itemState.highlightAmount, inReach ? 1 : 0, 0.25);
+    }
+
+    mesh.material.emissive.setRGB(
+      0.1 * itemState.highlightAmount,
+      0.9 * itemState.highlightAmount,
+      0.8 * itemState.highlightAmount
+    );
+    mesh.material.emissiveIntensity = itemState.highlightAmount;
+  }
+
+  // sync weapon meshes with their physics bodies (only for weapons not being fixed-driven this frame,
+  // fixed-driven ones were already positioned in driveHeldWeapons — this keeps thrown/dropped ones synced too)
+  for (const weapon of weapons) {
+    weapon.model.group.position.set(weapon.body.position.x, weapon.body.position.y, weapon.body.position.z);
+    weapon.model.group.quaternion.set(weapon.body.quaternion.x, weapon.body.quaternion.y, weapon.body.quaternion.z, weapon.body.quaternion.w);
+  }
+
+  // bullets: lifetime, sync mesh, detect craft-table hits
+  // (dummy damage from bullet impacts is handled by the generic cannon 'collide' listener on
+  // dummyBody, so all impact damage — bullets, thrown cubes/balls, thrown weapons — goes through
+  // one shared, velocity-based path)
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z);
+    b.mesh.quaternion.set(b.body.quaternion.x, b.body.quaternion.y, b.body.quaternion.z, b.body.quaternion.w);
+
+    let consumed = false;
+
+    // craft table hit: bullet close to the recipe button / table zone -> attempt craft
+    const bp = b.mesh.position;
+    const distToTable = bp.distanceTo(new THREE.Vector3(CRAFT_TABLE_POS.x, CRAFT_SURFACE_Y + CRAFT_TABLE_POS.y, CRAFT_TABLE_POS.z));
+    if (b.isBullet && distToTable < 0.75) {
+      tryCraftFromTable();
+      consumed = true;
+    }
+
+    if (!consumed && simTime - b.spawnTime > BULLET_LIFETIME) consumed = true;
+
+    if (consumed) {
+      scene.remove(b.mesh);
+      world.removeBody(b.body);
+      bullets.splice(i, 1);
+    }
+  }
+
+  // sword collision damage against the dummy: checked by direct distance every frame (in addition
+  // to the generic collide-event path) because the sword tip moves fast enough while kinematically
+  // hand-driven that it can tunnel past a single physics contact between frames.
+  for (const weapon of weapons) {
+    if (weapon.kind !== 'sword' || weaponHandleCount(weapon) === 0) continue;
+    if (weapon.swingDamageCooldown > 0) continue;
+    const tipLocal = new THREE.Vector3(0, 0, weapon.model.tipLocalZ);
+    const tipWorld = tipLocal.applyQuaternion(weapon.model.group.quaternion).add(weapon.model.group.position);
+    const dyLocal = tipWorld.y - DUMMY_POS.y;
+    const dxz = Math.sqrt((tipWorld.x - DUMMY_POS.x) ** 2 + (tipWorld.z - DUMMY_POS.z) ** 2);
+    const nearTorso = dyLocal > 0.85 && dyLocal < 1.45 && dxz < 0.35;
+    const nearHead = dyLocal > 1.46 && dyLocal < 1.78 && dxz < 0.25;
+    if (nearTorso || nearHead) {
+      // sword velocity approximated from the primary holding hand's tracked linear velocity
+      const primaryController = weapon.heldBy.handle || weapon.heldBy.rear;
+      const vel = primaryController ? primaryController.userData.linearVelocity : new THREE.Vector3();
+      damageDummy(tipWorld, vel, simTime);
+      weapon.swingDamageCooldown = 0.2; // 0.2s damage cooldown, as requested
+    }
+  }
+
+  // recipe select button: press by touching it with a hand sphere
+  if (recipeButtonCooldown > 0) recipeButtonCooldown = Math.max(0, recipeButtonCooldown - delta);
+  else {
+    const buttonWorldPos = new THREE.Vector3();
+    recipeButtonBase.getWorldPosition(buttonWorldPos);
+    for (const cp of controllerWorldPositions) {
+      if (cp.distanceTo(buttonWorldPos) < 0.09) {
+        cycleRecipe();
+        recipeButtonCooldown = 0.5;
+        break;
+      }
+    }
+  }
+
+  // floating damage popups: drift upward and fade out
+  for (let i = damagePopups.length - 1; i >= 0; i--) {
+    const p = damagePopups[i];
+    p.life -= delta * 0.9;
+    p.sprite.position.y += delta * 0.6;
+    p.sprite.material.opacity = Math.max(0, p.life);
+    if (p.life <= 0) {
+      scene.remove(p.sprite);
+      damagePopups.splice(i, 1);
+    }
+  }
+
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
