@@ -1,0 +1,3561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VR Sandbox: Grab, Craft &amp; Shoot</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: #111; }
+  #info {
+    position: absolute; top: 12px; left: 0; width: 100%;
+    text-align: center; color: #fff; font-family: sans-serif;
+    font-size: 14px; z-index: 1; pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div id="info">Grip = grab / throw cubes, balls, or weapons (swap hands by grabbing with the other one)<br>
+Trigger = shoot when holding a gun &nbsp;|&nbsp; X/A = aim &amp; teleport (cooldown adjustable on the settings board) &nbsp;|&nbsp; Left stick = move &nbsp;|&nbsp; Right stick = turn &nbsp;|&nbsp; Left stick click = jump<br>
+Press Y x3 in 2s = spawn cube in hand &nbsp;|&nbsp; Press left trigger x3 in 2s (empty-handed) = spawn ball in hand<br>
+Craft table: cycle recipes, then shoot the materials to craft &nbsp;|&nbsp; Mine rocks with the pickaxe (1.5x damage) &nbsp;|&nbsp; Grab an ammo box and pull the trigger to load your ammo belt &nbsp;|&nbsp; Settings board: toggle spawning, waves, teleport, and its cooldown</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/+esm"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+// ================================================================
+// Basic scene setup
+// ================================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 10, 50);
+
+const BASE_FOV = 70;
+const SNIPER_ZOOM_FOV = 18; // narrow FOV while looking through the scope = visual zoom
+const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.05, 100);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ================================================================
+// Lighting
+// ================================================================
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(3, 8, 4);
+scene.add(dirLight);
+
+// ================================================================
+// Player rig (moving this moves the player in VR)
+// ================================================================
+const rig = new THREE.Group();
+rig.position.set(0, 0, 3);
+rig.add(camera);
+scene.add(rig);
+
+// Declared early (used by locomotion below, but also by creature speed constants which are
+// defined earlier in the file than the locomotion section) to avoid a temporal-dead-zone error.
+const MOVE_SPEED = 2.5;
+
+// ================================================================
+// Physics world (cannon-es)
+// ================================================================
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+world.broadphase = new CANNON.SAPBroadphase(world);
+world.allowSleep = true;
+world.solver.iterations = 15;
+
+const groundPhysMaterial = new CANNON.Material('ground');
+const cubePhysMaterial = new CANNON.Material('cube');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, cubePhysMaterial, { friction: 0.45, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(cubePhysMaterial, cubePhysMaterial, { friction: 0.45, restitution: 0.05 }));
+
+function threeQuatToCannon(q) { return new CANNON.Quaternion(q.x, q.y, q.z, q.w); }
+
+// Running elapsed-time clock, updated once per frame in the render loop below.
+// Declared early so systems defined before the render loop (bullets, cooldowns, etc.)
+// can reference the current time when they're first set up.
+let simTime = 0;
+
+// ================================================================
+// Global settings, controlled via the in-world settings board
+// ================================================================
+const gameSettings = {
+  spawningEnabled: true,   // triple-tap cube/ball spawning + rock mining drops
+  teleportEnabled: true,
+  teleportCooldown: 5.0,   // seconds (default per spec), adjustable 0.1 - 10 via the settings-board slider
+  wavesEnabled: false
+};
+const TELEPORT_COOLDOWN_MIN = 0.1;
+const TELEPORT_COOLDOWN_MAX = 10;
+
+function addStaticBoxBody(mesh, halfExtents) {
+  const body = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+  body.addShape(new CANNON.Box(new CANNON.Vec3(halfExtents.x, halfExtents.y, halfExtents.z)));
+  body.position.set(mesh.position.x, mesh.position.y, mesh.position.z);
+  body.quaternion.copy(threeQuatToCannon(mesh.quaternion));
+  world.addBody(body);
+  return body;
+}
+
+// ================================================================
+// World geometry: platform + ramp + top platform
+// ================================================================
+const PLATFORM_SIZE = 80; // 2x bigger than the original 40
+
+const platform = new THREE.Mesh(
+  new THREE.BoxGeometry(PLATFORM_SIZE, 0.2, PLATFORM_SIZE),
+  new THREE.MeshStandardMaterial({ color: 0x2ecc40, roughness: 0.9 })
+);
+platform.position.y = -0.1;
+scene.add(platform);
+addStaticBoxBody(platform, new THREE.Vector3(PLATFORM_SIZE / 2, 0.1, PLATFORM_SIZE / 2));
+
+const grid = new THREE.GridHelper(PLATFORM_SIZE, 80, 0x1c7a2c, 0x1c7a2c);
+grid.position.y = 0.001;
+scene.add(grid);
+
+// --- Slope + platform-at-top footprint (used for both visuals & player-walking collision) ---
+const RAMP_X_MIN = -3, RAMP_X_MAX = 3;
+const RAMP_Z_BOTTOM = -10;   // low end of the ramp (height 0)
+const RAMP_Z_TOP = -20;      // high end of the ramp (height RAMP_HEIGHT)
+const RAMP_HEIGHT = 3;
+
+const TOP_X_MIN = -3, TOP_X_MAX = 3;
+const TOP_Z_MIN = -24, TOP_Z_MAX = -20;
+
+const rampMat = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.8 });
+
+const rampRun = RAMP_Z_BOTTOM - RAMP_Z_TOP; // 10
+const rampAngle = Math.atan2(RAMP_HEIGHT, rampRun);
+const rampHyp = Math.sqrt(rampRun * rampRun + RAMP_HEIGHT * RAMP_HEIGHT);
+
+const rampMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(RAMP_X_MAX - RAMP_X_MIN, 0.3, rampHyp),
+  rampMat
+);
+rampMesh.rotation.x = rampAngle;
+rampMesh.position.set(0, RAMP_HEIGHT / 2, (RAMP_Z_BOTTOM + RAMP_Z_TOP) / 2);
+scene.add(rampMesh);
+addStaticBoxBody(rampMesh, new THREE.Vector3((RAMP_X_MAX - RAMP_X_MIN) / 2, 0.15, rampHyp / 2));
+
+const topPlatformMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(TOP_X_MAX - TOP_X_MIN, 0.3, TOP_Z_MAX - TOP_Z_MIN),
+  rampMat
+);
+topPlatformMesh.position.set(0, RAMP_HEIGHT - 0.15, (TOP_Z_MIN + TOP_Z_MAX) / 2);
+scene.add(topPlatformMesh);
+addStaticBoxBody(topPlatformMesh, new THREE.Vector3((TOP_X_MAX - TOP_X_MIN) / 2, 0.15, (TOP_Z_MAX - TOP_Z_MIN) / 2));
+
+// Returns the walkable height of the world at a given x,z (used for the player's feet, not the
+// cubes). `currentY` is the caller's current vertical position (feet height); it's used to decide
+// whether the ramp/top platform should count as "ground" here at all. Without this, any x/z that
+// falls within the ramp or top-platform footprint always reported the ramp's surface height, which
+// glued the player to the top of the ramp even when they were standing on the flat ground well
+// below it (i.e. there was no way to walk underneath the ramp/top platform's overhang) and pulled
+// them back up immediately after jumping off its side. Passing currentY = Infinity (the default,
+// used by non-player callers like creature placement that always want the walkable surface on top)
+// preserves the old always-snap-to-surface behavior.
+const UNDER_RAMP_CLEARANCE = 0.6; // how far below the ramp/top surface still counts as "on/climbing it" vs. "underneath it"
+function getGroundHeight(x, z, currentY) {
+  const y = currentY === undefined ? Infinity : currentY;
+
+  if (x >= TOP_X_MIN && x <= TOP_X_MAX && z >= TOP_Z_MIN && z <= TOP_Z_MAX) {
+    if (y >= RAMP_HEIGHT - UNDER_RAMP_CLEARANCE) return RAMP_HEIGHT;
+    return 0; // standing underneath the top platform's overhang -> flat ground, not glued to the top
+  }
+  if (x >= RAMP_X_MIN && x <= RAMP_X_MAX && z <= RAMP_Z_BOTTOM && z >= RAMP_Z_TOP) {
+    const t = (RAMP_Z_BOTTOM - z) / (RAMP_Z_BOTTOM - RAMP_Z_TOP);
+    const rampSurfaceY = t * RAMP_HEIGHT;
+    if (y >= rampSurfaceY - UNDER_RAMP_CLEARANCE) return rampSurfaceY;
+    return 0; // standing underneath the sloped overhang -> flat ground beneath the ramp
+  }
+  return 0;
+}
+
+// ================================================================
+// Cubes (grabbable, throwable) — physics fully driven by cannon-es
+// ================================================================
+const CUBE_SIZE = 0.2;
+const GRAB_DISTANCE = 0.4;
+const THROW_MULTIPLIER = 1.3;
+const CUBE_MASS = 0.4;
+
+function makeCubeMesh(color) {
+  return new THREE.Mesh(
+    new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE),
+    new THREE.MeshStandardMaterial({
+      color, roughness: 0.4, metalness: 0.1,
+      emissive: 0x000000, emissiveIntensity: 0
+    })
+  );
+}
+
+const cubeDefs = [
+  { pos: [0, 1.5, 2],      color: 0xff8c00 }, // base cube
+  { pos: [0, 3.0, 2],      color: 0x3498db }, // stacked on base cube
+  { pos: [0, 4.5, 2],      color: 0x9b59b6 }, // stacked on the second cube
+  { pos: [1.5, 1.5, 1.2],  color: 0xe74c3c }, // a little further away
+  { pos: [-1.5, 1.5, 2.8], color: 0xf1c40f }, // a little further away
+];
+
+function makeCubeState(def) {
+  const mesh = makeCubeMesh(def.color);
+  mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: CUBE_MASS,
+    material: cubePhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(CUBE_SIZE / 2, CUBE_SIZE / 2, CUBE_SIZE / 2)),
+    linearDamping: 0.05,
+    angularDamping: 0.3
+  });
+  body.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  world.addBody(body);
+
+  return {
+    itemType: 'cube',
+    mesh,
+    body,
+    grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(),
+    grabOffsetQuat: new THREE.Quaternion(),
+    highlightAmount: 0
+  };
+}
+
+const cubes = cubeDefs.map(makeCubeState);
+
+// ================================================================
+// Balls (grabbable, throwable, craft material) — same physics pattern as cubes
+// ================================================================
+const BALL_RADIUS = 0.09;
+const BALL_MASS = 0.25;
+const ballPhysMaterial = new CANNON.Material('ball');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, ballPhysMaterial, { friction: 0.4, restitution: 0.35 }));
+world.addContactMaterial(new CANNON.ContactMaterial(cubePhysMaterial, ballPhysMaterial, { friction: 0.4, restitution: 0.2 }));
+world.addContactMaterial(new CANNON.ContactMaterial(ballPhysMaterial, ballPhysMaterial, { friction: 0.4, restitution: 0.35 }));
+
+function makeBallMesh(color) {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(BALL_RADIUS, 20, 16),
+    new THREE.MeshStandardMaterial({
+      color, roughness: 0.3, metalness: 0.15,
+      emissive: 0x000000, emissiveIntensity: 0
+    })
+  );
+}
+
+function makeBallState(def) {
+  const mesh = makeBallMesh(def.color);
+  mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: BALL_MASS,
+    material: ballPhysMaterial,
+    shape: new CANNON.Sphere(BALL_RADIUS),
+    linearDamping: 0.05,
+    angularDamping: 0.3
+  });
+  body.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  world.addBody(body);
+
+  return {
+    itemType: 'ball',
+    mesh,
+    body,
+    grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(),
+    grabOffsetQuat: new THREE.Quaternion(),
+    highlightAmount: 0
+  };
+}
+
+const ballDefs = [
+  { pos: [2.2, 1.5, 1.5],  color: 0x2ecc71 },
+  { pos: [2.5, 1.5, 2.0],  color: 0x1abc9c },
+  { pos: [-2.2, 1.5, 1.2], color: 0xe67e22 },
+];
+const balls = ballDefs.map(makeBallState);
+
+// Combined list of hand-grabbable small items (cubes + balls) used for the grip-grab search.
+const grabbableItems = [...cubes, ...balls];
+
+const SPAWN_CUBE_COLORS = [0xff8c00, 0x3498db, 0x9b59b6, 0xe74c3c, 0xf1c40f, 0x2ecc71];
+const SPAWN_BALL_COLORS = [0x2ecc71, 0x1abc9c, 0xe67e22, 0x9b59b6, 0x3498db];
+
+function spawnCubeAtPosition(position) {
+  if (!gameSettings.spawningEnabled) return null;
+  const color = SPAWN_CUBE_COLORS[Math.floor(Math.random() * SPAWN_CUBE_COLORS.length)];
+  const item = makeCubeState({ pos: [position.x, position.y, position.z], color });
+  cubes.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+function spawnBallAtPosition(position) {
+  if (!gameSettings.spawningEnabled) return null;
+  const color = SPAWN_BALL_COLORS[Math.floor(Math.random() * SPAWN_BALL_COLORS.length)];
+  const item = makeBallState({ pos: [position.x, position.y, position.z], color });
+  balls.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+// ================================================================
+// Heavier crafted materials: Iron Cube, Big Cube, Iron Bar — same grab/throw/highlight pattern
+// as cubes/balls (all live in grabbableItems), but with their own size, mass, and material so
+// they read and feel heavier ("harder to drag around" = a much higher physics mass + damping).
+// ================================================================
+// Separate list (like cubes/balls) so crafting can count materials by type; also folded into
+// grabbableItems for the shared grab/throw/highlight logic.
+const materialItems = [];
+
+const ironCubePhysMaterial = new CANNON.Material('ironCube');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, ironCubePhysMaterial, { friction: 0.6, restitution: 0.02 }));
+world.addContactMaterial(new CANNON.ContactMaterial(cubePhysMaterial, ironCubePhysMaterial, { friction: 0.55, restitution: 0.02 }));
+world.addContactMaterial(new CANNON.ContactMaterial(ballPhysMaterial, ironCubePhysMaterial, { friction: 0.5, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(ironCubePhysMaterial, ironCubePhysMaterial, { friction: 0.6, restitution: 0.02 }));
+
+const ironMat = () => new THREE.MeshStandardMaterial({ color: 0x9aa3ab, roughness: 0.45, metalness: 0.85, emissive: 0x000000, emissiveIntensity: 0 });
+
+const IRON_CUBE_SIZE = CUBE_SIZE;
+const IRON_CUBE_MASS = 2.6; // noticeably heavier than a regular cube (0.4) -> harder to drag/throw far
+
+function makeIronCubeState(pos) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(IRON_CUBE_SIZE, IRON_CUBE_SIZE, IRON_CUBE_SIZE), ironMat());
+  mesh.position.set(pos.x, pos.y, pos.z);
+  scene.add(mesh);
+  const body = new CANNON.Body({
+    mass: IRON_CUBE_MASS,
+    material: ironCubePhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(IRON_CUBE_SIZE / 2, IRON_CUBE_SIZE / 2, IRON_CUBE_SIZE / 2)),
+    linearDamping: 0.15, // extra damping so it feels sluggish/heavy to sling around
+    angularDamping: 0.5
+  });
+  body.position.set(pos.x, pos.y, pos.z);
+  world.addBody(body);
+  return {
+    itemType: 'ironCube', mesh, body, grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(), grabOffsetQuat: new THREE.Quaternion(), highlightAmount: 0
+  };
+}
+
+function spawnIronCubeAtPosition(position) {
+  if (!gameSettings.spawningEnabled) return null;
+  const item = makeIronCubeState(position);
+  materialItems.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+const BIG_CUBE_SIZE = CUBE_SIZE * 3; // 3x bigger than a regular cube, as requested
+const BIG_CUBE_MASS = 5.5; // heavier still — a big, heavy cube that's genuinely hard to drag around
+
+function makeBigCubeState(pos) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(BIG_CUBE_SIZE, BIG_CUBE_SIZE, BIG_CUBE_SIZE),
+    new THREE.MeshStandardMaterial({ color: 0xff8c00, roughness: 0.45, metalness: 0.15, emissive: 0x000000, emissiveIntensity: 0 })
+  );
+  mesh.position.set(pos.x, pos.y, pos.z);
+  scene.add(mesh);
+  const body = new CANNON.Body({
+    mass: BIG_CUBE_MASS,
+    material: ironCubePhysMaterial, // shares the "heavy" contact tuning
+    shape: new CANNON.Box(new CANNON.Vec3(BIG_CUBE_SIZE / 2, BIG_CUBE_SIZE / 2, BIG_CUBE_SIZE / 2)),
+    linearDamping: 0.2,
+    angularDamping: 0.55
+  });
+  body.position.set(pos.x, pos.y, pos.z);
+  world.addBody(body);
+  return {
+    itemType: 'bigCube', mesh, body, grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(), grabOffsetQuat: new THREE.Quaternion(), highlightAmount: 0
+  };
+}
+
+function spawnBigCubeAtPosition(position) {
+  if (!gameSettings.spawningEnabled) return null;
+  const item = makeBigCubeState(position);
+  materialItems.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+const IRON_BAR_LEN = 0.34;
+const IRON_BAR_W = 0.09;
+const IRON_BAR_MASS = 1.6; // lighter than the iron cube, but still heavy compared to a regular cube
+
+function makeIronBarState(pos) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(IRON_BAR_W, IRON_BAR_W, IRON_BAR_LEN), ironMat());
+  mesh.position.set(pos.x, pos.y, pos.z);
+  scene.add(mesh);
+  const body = new CANNON.Body({
+    mass: IRON_BAR_MASS,
+    material: ironCubePhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(IRON_BAR_W / 2, IRON_BAR_W / 2, IRON_BAR_LEN / 2)),
+    linearDamping: 0.12,
+    angularDamping: 0.45
+  });
+  body.position.set(pos.x, pos.y, pos.z);
+  world.addBody(body);
+  return {
+    itemType: 'ironBar', mesh, body, grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(), grabOffsetQuat: new THREE.Quaternion(), highlightAmount: 0
+  };
+}
+
+function spawnIronBarAtPosition(position) {
+  if (!gameSettings.spawningEnabled) return null;
+  const item = makeIronBarState(position);
+  materialItems.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+// ================================================================
+// Ammo Box — grabbable crate of 20 bullets; holding it and pulling the trigger collects it into
+// the player's ammo belt (a running count used to reload guns).
+// ================================================================
+const AMMO_BOX_ROUNDS = 20;
+const ammoBoxes = []; // separate list so the trigger handler can find "am I holding an ammo box"
+
+function makeAmmoBoxMesh() {
+  const group = new THREE.Group();
+  const crateMat = new THREE.MeshStandardMaterial({ color: 0x4a5a3a, roughness: 0.8, metalness: 0.1 });
+  const strapMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2e, roughness: 0.6, metalness: 0.3 });
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.11, 0.11), crateMat);
+  group.add(box);
+  for (const sx of [-0.055, 0.055]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.115, 0.115), strapMat);
+    strap.position.x = sx;
+    group.add(strap);
+  }
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.1, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xd8c67a, roughness: 0.7 })
+  );
+  label.position.set(0, 0, 0.056);
+  group.add(label);
+  return group;
+}
+
+function makeAmmoBoxState(pos) {
+  const mesh = makeAmmoBoxMesh();
+  mesh.position.set(pos.x, pos.y, pos.z);
+  scene.add(mesh);
+  const body = new CANNON.Body({
+    mass: 1.0,
+    material: weaponPhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(0.08, 0.058, 0.058)),
+    linearDamping: 0.12,
+    angularDamping: 0.4
+  });
+  body.position.set(pos.x, pos.y, pos.z);
+  world.addBody(body);
+  const item = {
+    itemType: 'ammoBox', mesh, body, grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(), grabOffsetQuat: new THREE.Quaternion(), highlightAmount: 0,
+    isGroupMesh: true
+  };
+  return item;
+}
+
+function spawnAmmoBoxAtPosition(position) {
+  if (!gameSettings.spawningEnabled) return null;
+  const item = makeAmmoBoxState(position);
+  ammoBoxes.push(item);
+  grabbableItems.push(item);
+  return item;
+}
+
+// Called from the trigger's selectstart handler: if this hand is holding an ammo box, collect
+// it into the belt instead of (or in addition to) any weapon-fire / tap-spawn logic.
+function tryCollectHeldAmmoBox(controller) {
+  const heldItem = controller.userData.heldCube;
+  if (!heldItem || heldItem.itemType !== 'ammoBox') return false;
+  ammoBeltCount += AMMO_BOX_ROUNDS;
+  removeGrabbableItem(heldItem);
+  const bIdx = ammoBoxes.indexOf(heldItem);
+  if (bIdx !== -1) ammoBoxes.splice(bIdx, 1);
+  controller.userData.heldCube = null;
+  return true;
+}
+
+// ================================================================
+// Controllers: laser pointer, hand spheres, grab, throw, teleport
+// ================================================================
+const tempMatrix = new THREE.Matrix4();
+const raycaster = new THREE.Raycaster();
+const teleportTargets = [platform, rampMesh, topPlatformMesh];
+
+const controllers = [];
+const handSpheres = [];
+const cooldownIndicators = [];
+
+function createCooldownIndicator() {
+  const group = new THREE.Group();
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.06, 0.012),
+    new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthTest: false, depthWrite: false })
+  );
+  const fillGeo = new THREE.PlaneGeometry(0.06, 0.012);
+  fillGeo.translate(0.03, 0, 0); // pivot so scale.x grows from the left edge
+  const fill = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color: 0xffaa00, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+  fill.position.x = -0.03;
+  // separate the two panels along Z so they never coplanar-fight, and render fill after bg
+  bg.position.z = 0;
+  bg.renderOrder = 0;
+  fill.position.z = 0.001;
+  fill.renderOrder = 1;
+  group.add(bg);
+  group.add(fill);
+  group.position.set(0, 0.03, -0.05);
+  group.rotation.x = -Math.PI / 2.4;
+  group.visible = false;
+  return { group, fill };
+}
+
+function getControllerWorldPose(controller) {
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(pos);
+  controller.getWorldQuaternion(quat);
+  return { pos, quat };
+}
+
+for (let i = 0; i < 2; i++) {
+  const controller = renderer.xr.getController(i);
+  controller.userData.handedness = null; // filled in on connect
+  controller.userData.isSelecting = false;
+  controller.userData.heldCube = null;      // held small item (cube/ball) state, or null
+  controller.userData.heldWeapon = null;    // { weapon, handleName } for a held weapon grip, or null
+  controller.userData.teleportCooldown = 0;
+  controller.userData.linearVelocity = new THREE.Vector3();
+  controller.userData.angularVelocity = new THREE.Vector3();
+  controller.userData.prevPos = null;
+  controller.userData.prevQuat = null;
+  // button edge-detection state (gamepad buttons are polled, not events)
+  controller.userData.prevButtons = [];
+  controller.userData.tapTimes = []; // timestamps of recent X/Y taps for this controller's face button
+  controller.userData.shootHeld = false;
+  rig.add(controller);
+  controllers.push(controller);
+
+  controller.addEventListener('connected', (evt) => {
+    controller.userData.handedness = evt.data && evt.data.handedness;
+  });
+
+  // simple sphere "hand"
+  const grip = renderer.xr.getControllerGrip(i);
+  const handSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.045, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffcc99, roughness: 0.6 })
+  );
+  grip.add(handSphere);
+  rig.add(grip);
+  handSpheres.push(handSphere);
+
+  // small laser pointer, always visible on the controller
+  const pointerGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -1)
+  ]);
+  const pointer = new THREE.Line(pointerGeom, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }));
+  pointer.scale.z = 0.3;
+  controller.add(pointer);
+
+  // teleport cooldown gauge
+  const indicator = createCooldownIndicator();
+  controller.add(indicator.group);
+  cooldownIndicators.push(indicator);
+
+  // Trigger now fires whichever weapon this hand is holding by its trigger grip (moved off the
+  // face buttons, as requested). Held automatically also keeps firing full-auto for the rifle
+  // and shotgun-style weapons that support it, checked each frame in updateFaceButtons/the main
+  // loop via controller.userData.triggerHeld below.
+  controller.addEventListener('selectstart', () => {
+    controller.userData.isSelecting = true;
+    controller.userData.triggerHeld = true;
+    if (controller.userData.heldWeapon) {
+      const kind = controller.userData.heldWeapon.weapon.kind;
+      const w = controller.userData.heldWeapon.weapon;
+      const capacity = ammoCapacityFor(kind);
+      // if this gun is empty, pulling the trigger reloads one round from the belt instead of
+      // dry-firing (repeat presses keep loading, matching "put a bullet in / rack it" one at a time)
+      if (capacity && (w.ammoLoaded === 0)) {
+        reloadWeaponFromBelt(w);
+      } else {
+        tryFireHeldWeapon(controller);
+      }
+    } else if (tryCollectHeldAmmoBox(controller)) {
+      // handled: ammo box collected into the belt
+    } else if (controller.userData.handedness === 'left') {
+      // left trigger triple-tap within 2s (when empty-handed) -> spawn a ball at that hand,
+      // moved here from the X button since X/A are now dedicated to teleport.
+      controller.userData.xTapTimes = controller.userData.xTapTimes || [];
+      const times = controller.userData.xTapTimes;
+      const now = simTime;
+      times.push(now);
+      while (times.length > 0 && now - times[0] > TAP_WINDOW) times.shift();
+      if (times.length >= TAPS_REQUIRED) {
+        spawnBallAtPosition(getHandForwardSpawnPos(controller));
+        times.length = 0;
+      }
+    }
+  });
+  controller.addEventListener('selectend', () => {
+    controller.userData.isSelecting = false;
+    controller.userData.triggerHeld = false;
+  });
+
+  controller.addEventListener('squeezestart', () => {
+    if (controller.userData.heldCube || controller.userData.heldWeapon) return; // already holding something
+
+    const { pos: controllerPos, quat: controllerQuat } = getControllerWorldPose(controller);
+
+    // prefer whichever is nearer: a small item, or a weapon grab handle
+    let nearestItem = null;
+    let nearestItemDist = GRAB_DISTANCE;
+    for (const itemState of grabbableItems) {
+      if (itemState.grabbedBy === controller) continue;
+      const dist = controllerPos.distanceTo(itemState.mesh.position);
+      if (dist < nearestItemDist) { nearestItem = itemState; nearestItemDist = dist; }
+    }
+
+    const nearestWeaponHandle = findNearestWeaponHandle(controllerPos);
+    const weaponDist = nearestWeaponHandle
+      ? controllerPos.distanceTo((() => { const p = new THREE.Vector3(); nearestWeaponHandle.handle.obj.getWorldPosition(p); return p; })())
+      : Infinity;
+
+    // Compare against the item distance only when an item was actually found in range; otherwise
+    // nearestItemDist still holds its GRAB_DISTANCE (0.4) search-radius default, which is smaller
+    // than WEAPON_GRAB_DISTANCE (0.5) and was wrongly capping weapon-handle grabs to 0.4. This is
+    // what made it impossible to grab a second grip (e.g. the sniper's fore-grip, which sits
+    // farther from the body than 0.4) while the first hand already held the weapon.
+    const effectiveItemDist = nearestItem ? nearestItemDist : Infinity;
+    if (nearestWeaponHandle && weaponDist <= effectiveItemDist) {
+      grabWeaponHandle(controller, nearestWeaponHandle.weapon, nearestWeaponHandle.handle);
+      handSphere.scale.setScalar(1.15);
+      return;
+    }
+
+    if (!nearestItem) return;
+
+    // if another controller is holding it, free that controller's reference (switching hands)
+    if (nearestItem.grabbedBy && nearestItem.grabbedBy !== controller) {
+      nearestItem.grabbedBy.userData.heldCube = null;
+    }
+
+    // remember the item's pose relative to this controller so it keeps its grabbed offset
+    const invQuat = controllerQuat.clone().invert();
+    nearestItem.grabOffsetPos.copy(nearestItem.mesh.position).sub(controllerPos).applyQuaternion(invQuat);
+    nearestItem.grabOffsetQuat.copy(invQuat).multiply(nearestItem.mesh.quaternion);
+
+    nearestItem.grabbedBy = controller;
+    nearestItem.body.type = CANNON.Body.KINEMATIC;
+    nearestItem.body.velocity.set(0, 0, 0);
+    nearestItem.body.angularVelocity.set(0, 0, 0);
+    controller.userData.heldCube = nearestItem;
+
+    handSphere.scale.setScalar(1.15);
+  });
+
+  controller.addEventListener('squeezeend', () => {
+    handSphere.scale.setScalar(1.0);
+
+    if (controller.userData.heldWeapon) {
+      releaseWeaponHandle(controller);
+    }
+
+    const cubeState = controller.userData.heldCube;
+    if (!cubeState) return;
+
+    cubeState.grabbedBy = null;
+    controller.userData.heldCube = null;
+    cubeState.body.type = CANNON.Body.DYNAMIC;
+    cubeState.body.wakeUp();
+
+    // throw: carry over the hand's tracked linear + angular velocity
+    const throwVel = controller.userData.linearVelocity.clone().multiplyScalar(THROW_MULTIPLIER);
+    cubeState.body.velocity.set(throwVel.x, throwVel.y, throwVel.z);
+    const av = controller.userData.angularVelocity;
+    cubeState.body.angularVelocity.set(av.x, av.y, av.z);
+  });
+}
+
+// ================================================================
+// Teleport marker + aim line
+// ================================================================
+const teleportMarker = new THREE.Mesh(
+  new THREE.RingGeometry(0.25, 0.35, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+);
+teleportMarker.visible = false;
+scene.add(teleportMarker);
+
+const teleportLineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const teleportLine = new THREE.Line(teleportLineGeom, new THREE.LineBasicMaterial({ color: 0x00e5ff }));
+teleportLine.visible = false;
+scene.add(teleportLine);
+
+function updateTeleportAim(controller) {
+  if (!gameSettings.teleportEnabled) {
+    controller.userData.teleportValid = false;
+    teleportMarker.visible = false;
+    teleportLine.visible = false;
+    return;
+  }
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+
+  const origin = new THREE.Vector3();
+  controller.getWorldPosition(origin);
+
+  const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+
+  raycaster.ray.origin.copy(origin);
+  raycaster.ray.direction.copy(direction);
+
+  const hits = raycaster.intersectObjects(teleportTargets, false);
+  const onCooldown = controller.userData.teleportCooldown > 0;
+  const color = onCooldown ? 0xff4444 : 0x00e5ff;
+  teleportMarker.material.color.setHex(color);
+  teleportLine.material.color.setHex(color);
+
+  if (hits.length > 0) {
+    const point = hits[0].point;
+    controller.userData.teleportValid = !onCooldown;
+    controller.userData.teleportPoint = point;
+
+    teleportMarker.position.set(point.x, point.y + 0.01, point.z);
+    teleportMarker.visible = true;
+
+    const positions = teleportLine.geometry.attributes.position;
+    positions.setXYZ(0, origin.x, origin.y, origin.z);
+    positions.setXYZ(1, point.x, point.y + 0.02, point.z);
+    positions.needsUpdate = true;
+    teleportLine.visible = true;
+  } else {
+    controller.userData.teleportValid = false;
+    teleportMarker.visible = false;
+    teleportLine.visible = false;
+  }
+}
+
+// ================================================================
+// Angular velocity helper (world-space)
+// ================================================================
+function computeAngularVelocity(prevQuat, curQuat, delta) {
+  const deltaQuat = curQuat.clone().multiply(prevQuat.clone().invert());
+  let w = THREE.MathUtils.clamp(deltaQuat.w, -1, 1);
+  let angle = 2 * Math.acos(w);
+  if (angle > Math.PI) angle -= 2 * Math.PI;
+  const s = Math.sqrt(1 - w * w);
+  const axis = new THREE.Vector3(deltaQuat.x, deltaQuat.y, deltaQuat.z);
+  if (s > 0.0001) axis.divideScalar(s); else axis.set(0, 0, 0);
+  return axis.multiplyScalar(angle / Math.max(delta, 0.0001));
+}
+
+// ================================================================
+// Weapons: pistol / rifle / sword
+// ================================================================
+// Weapons are NOT part of `grabbableItems` (cubes/balls) — they have their own
+// grab handling below, so they are always held in a fixed, correct orientation
+// (grip snaps to a defined "handGrip" transform on the model, rather than being
+// held at whatever offset the hand happened to grab).
+const weaponPhysMaterial = new CANNON.Material('weapon');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, weaponPhysMaterial, { friction: 0.5, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(cubePhysMaterial, weaponPhysMaterial, { friction: 0.4, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(ballPhysMaterial, weaponPhysMaterial, { friction: 0.4, restitution: 0.2 }));
+world.addContactMaterial(new CANNON.ContactMaterial(weaponPhysMaterial, weaponPhysMaterial, { friction: 0.4, restitution: 0.05 }));
+
+const WEAPON_GRAB_DISTANCE = 0.5; // slightly more forgiving reach, esp. for two-handing longer weapons like the sniper
+const weapons = []; // all live weapon instances in the world
+
+// ---- Gun model builder (shared shape for pistol/rifle, scaled/detailed differently) ----
+function buildGunModel(kind) {
+  const group = new THREE.Group();
+  let scopeEye = null; // sniper only — set below
+  const metal = new THREE.MeshStandardMaterial({ color: 0x2b2b31, roughness: 0.35, metalness: 0.85 });
+  const darkGrip = new THREE.MeshStandardMaterial({ color: 0x1a1a1d, roughness: 0.7, metalness: 0.2 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0xd0392b, roughness: 0.4, metalness: 0.3 });
+
+  const isLongGun = kind === 'rifle' || kind === 'sniper';
+
+  // Local model space: barrel points down -Z, grip hangs down -Y, model origin sits
+  // roughly where the primary hand grips it.
+  const bodyLen = kind === 'rifle' ? 0.5 : kind === 'sniper' ? 0.58 : 0.24;
+  const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.05, bodyLen), metal);
+  bodyMesh.position.set(0, 0.02, -bodyLen / 2 + 0.05);
+  group.add(bodyMesh);
+
+  const barrelLen = kind === 'rifle' ? 0.32 : kind === 'sniper' ? 0.46 : 0.12;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, barrelLen, 12), metal);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.035, -bodyLen + 0.05 - barrelLen / 2);
+  group.add(barrel);
+
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.12, 0.045), darkGrip);
+  grip.position.set(0, -0.06, 0.05);
+  grip.rotation.x = -0.18;
+  group.add(grip);
+
+  const trigger = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.006, 8, 12, Math.PI), darkGrip);
+  trigger.position.set(0, -0.01, 0.06);
+  trigger.rotation.x = Math.PI;
+  group.add(trigger);
+
+  // muzzle marker (world-space attach point for bullet spawn, at the tip of the barrel)
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0.035, -bodyLen + 0.05 - barrelLen);
+  group.add(muzzle);
+
+  // handle grip attach (primary hand — trigger hand)
+  const handleGrip = new THREE.Object3D();
+  handleGrip.position.copy(grip.position);
+  handleGrip.rotation.copy(grip.rotation);
+  group.add(handleGrip);
+
+  let foreGrip = null;
+  if (isLongGun) {
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.045, 0.16), darkGrip);
+    stock.position.set(0, 0.015, 0.13);
+    group.add(stock);
+
+    const foreGripMesh = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.035), darkGrip);
+    foreGripMesh.position.set(0, -0.03, kind === 'sniper' ? -0.36 : -0.28);
+    group.add(foreGripMesh);
+
+    if (kind === 'sniper') {
+      // scope: tube + two lens rims, mounted above the receiver
+      const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.22, 14), metal);
+      scopeTube.rotation.x = Math.PI / 2;
+      scopeTube.position.set(0, 0.065, -0.05);
+      group.add(scopeTube);
+      const lensMat = new THREE.MeshStandardMaterial({ color: 0x1c3a4a, roughness: 0.15, metalness: 0.6, emissive: 0x0a2030, emissiveIntensity: 0.4 });
+      const lensFront = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.012, 14), lensMat);
+      lensFront.rotation.x = Math.PI / 2;
+      lensFront.position.set(0, 0.065, -0.16);
+      group.add(lensFront);
+      const lensRear = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.012, 14), lensMat);
+      lensRear.rotation.x = Math.PI / 2;
+      lensRear.position.set(0, 0.065, 0.06);
+      group.add(lensRear);
+      const mount1 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.025, 0.012), darkGrip);
+      mount1.position.set(0, 0.045, -0.13);
+      group.add(mount1);
+      const mount2 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.025, 0.012), darkGrip);
+      mount2.position.set(0, 0.045, 0.0);
+      group.add(mount2);
+
+      // Eye-relief anchor just behind the rear lens, and the scope's own forward (aim) axis —
+      // used at fire/aim time to detect the player looking through the scope and to apply an
+      // actual zoomed FOV rather than the scope being purely decorative.
+      scopeEye = new THREE.Object3D();
+      scopeEye.position.set(0, 0.065, 0.1);
+      group.add(scopeEye);
+    } else {
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.02, 0.06), accent);
+      sight.position.set(0, 0.05, -0.05);
+      group.add(sight);
+    }
+
+    foreGrip = new THREE.Object3D();
+    foreGrip.position.copy(foreGripMesh.position);
+    group.add(foreGrip);
+  } else {
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.015, 0.02), accent);
+    sight.position.set(0, 0.05, -0.16);
+    group.add(sight);
+  }
+
+  return { group, muzzle, handleGrip, foreGrip, bodyLen, scopeEye };
+}
+
+function buildSwordModel() {
+  // Rebuilt so every piece is dimensioned to sit flush against its neighbor (guard sits at the
+  // origin; blade and handle each start exactly at the guard's face) instead of the old layout
+  // where blade/guard/handle had small numeric gaps between them and visibly looked "split apart".
+  const group = new THREE.Group();
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.25, metalness: 0.9 });
+  const fullerMat = new THREE.MeshStandardMaterial({ color: 0xaeb8bd, roughness: 0.3, metalness: 0.85 });
+  const hiltMat = new THREE.MeshStandardMaterial({ color: 0x4a3222, roughness: 0.7, metalness: 0.1 });
+  const wrapMat = new THREE.MeshStandardMaterial({ color: 0x2e1f14, roughness: 0.85, metalness: 0.05 });
+  const guardMat = new THREE.MeshStandardMaterial({ color: 0xb8860b, roughness: 0.4, metalness: 0.7 });
+
+  const guardHalfDepth = 0.015;
+  const bladeLen = 0.55;
+  const handleLen = 0.2;
+  const tipLen = 0.06;
+
+  // Guard sits at local z = 0. Blade front face touches the guard's front face; handle front
+  // face touches the guard's back face. Nothing is offset by an unrelated magic number anymore.
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.022, guardHalfDepth * 2), guardMat);
+  guard.position.set(0, 0, 0);
+  group.add(guard);
+
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, bladeLen), bladeMat);
+  blade.position.set(0, 0, -guardHalfDepth - bladeLen / 2);
+  group.add(blade);
+
+  // thin fuller (center groove) laid on top of the blade for visual detail / distinct "bit"
+  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.0135, bladeLen - 0.08), fullerMat);
+  fuller.position.set(0, 0, -guardHalfDepth - bladeLen / 2 + 0.02);
+  group.add(fuller);
+
+  const bladeEndZ = -guardHalfDepth - bladeLen; // exact tip-end face of the blade
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.028, tipLen, 4), bladeMat);
+  tip.rotation.x = -Math.PI / 2;
+  tip.rotation.y = Math.PI / 4;
+  tip.position.set(0, 0, bladeEndZ - tipLen / 2);
+  group.add(tip);
+
+  // handle: a short stack of wrap segments (visually distinct "bits") between guard and pommel
+  const handleStartZ = guardHalfDepth;
+  const wrapSegments = 5;
+  const segLen = handleLen / wrapSegments;
+  for (let i = 0; i < wrapSegments; i++) {
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.019, 0.019, segLen * 0.86, 10),
+      i % 2 === 0 ? hiltMat : wrapMat
+    );
+    seg.rotation.x = Math.PI / 2;
+    seg.position.set(0, 0, handleStartZ + segLen * i + segLen / 2);
+    group.add(seg);
+  }
+
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), guardMat);
+  pommel.position.set(0, 0, handleStartZ + handleLen);
+  group.add(pommel);
+
+  // primary grip (front, near guard) and secondary grip (rear, near pommel) for two-handing
+  const handleGrip = new THREE.Object3D();
+  handleGrip.position.set(0, 0, handleStartZ + handleLen * 0.22);
+  group.add(handleGrip);
+
+  const rearGrip = new THREE.Object3D();
+  rearGrip.position.set(0, 0, handleStartZ + handleLen * 0.85);
+  group.add(rearGrip);
+
+  const tipLocalZ = bladeEndZ - tipLen;
+  return { group, handleGrip, rearGrip, bladeLen, tipLocalZ };
+}
+
+function buildPickaxeModel() {
+  // Similar construction language to the sword (contiguous handle + head), but topped with a
+  // pick head instead of a blade. Slightly bulkier proportions to read as "heavier" than the sword.
+  const group = new THREE.Group();
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.8, metalness: 0.05 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x555a5e, roughness: 0.4, metalness: 0.8 });
+  const bandMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2e, roughness: 0.6, metalness: 0.5 });
+
+  const handleLen = 0.5;
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, handleLen, 10), woodMat);
+  handle.rotation.x = Math.PI / 2;
+  handle.position.set(0, 0, 0);
+  group.add(handle);
+
+  const headZ = -handleLen / 2 - 0.02;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 10), bandMat);
+  band.rotation.x = Math.PI / 2;
+  band.position.set(0, 0, headZ);
+  group.add(band);
+
+  // two curved prongs approximated with cones pointing left/right
+  const prongGeo = new THREE.ConeGeometry(0.035, 0.32, 4);
+  const prongL = new THREE.Mesh(prongGeo, metalMat);
+  prongL.rotation.z = Math.PI / 2;
+  prongL.rotation.y = 0.35;
+  prongL.position.set(-0.17, 0.02, headZ);
+  group.add(prongL);
+  const prongR = new THREE.Mesh(prongGeo, metalMat);
+  prongR.rotation.z = -Math.PI / 2;
+  prongR.rotation.y = -0.35;
+  prongR.position.set(0.17, 0.02, headZ);
+  group.add(prongR);
+
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), bandMat);
+  pommel.position.set(0, 0, handleLen / 2);
+  group.add(pommel);
+
+  const handleGrip = new THREE.Object3D();
+  handleGrip.position.set(0, 0, handleLen * 0.05);
+  group.add(handleGrip);
+
+  const rearGrip = new THREE.Object3D();
+  rearGrip.position.set(0, 0, handleLen * 0.42);
+  group.add(rearGrip);
+
+  const tipLocalZ = headZ - 0.35; // approximate reach of the prong tips for swing-hit detection
+  return { group, handleGrip, rearGrip, bladeLen: handleLen, tipLocalZ };
+}
+
+function buildIronHammerModel() {
+  // Top-heavy: most of the mass/geometry sits at the head end, far from the anchor grip near the
+  // bottom of the handle, so it swings around the hand like a real hammer instead of being held
+  // rigidly along its length like the sword.
+  const group = new THREE.Group();
+  const handleMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3d, roughness: 0.6, metalness: 0.3 });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x8f96a0, roughness: 0.35, metalness: 0.85 });
+  const bandMat = new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.5, metalness: 0.6 });
+
+  const handleLen = 0.46;
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, handleLen, 10), handleMat);
+  handle.rotation.x = Math.PI / 2;
+  handle.position.set(0, 0, -handleLen / 2 + 0.06);
+  group.add(handle);
+
+  const headZ = -handleLen + 0.06;
+  const headBlock = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.13, 0.13), headMat);
+  headBlock.position.set(0, 0, headZ);
+  group.add(headBlock);
+
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.05, 10), bandMat);
+  band.rotation.x = Math.PI / 2;
+  band.position.set(0, 0, headZ + 0.11);
+  group.add(band);
+
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.1, 10), bandMat);
+  grip.rotation.x = Math.PI / 2;
+  grip.position.set(0, 0, 0.11);
+  group.add(grip);
+
+  // Single anchor grip near the bottom of the handle (as requested — the hammer swings around
+  // this point rather than being held with the sword's fixed dual-grip pattern).
+  const anchorGrip = new THREE.Object3D();
+  anchorGrip.position.set(0, 0, 0.14);
+  group.add(anchorGrip);
+
+  const tipLocalZ = headZ - 0.1; // reach of the hammer head for swing-hit detection
+  return { group, anchorGrip, bladeLen: handleLen, tipLocalZ, headZ };
+}
+
+function buildShotgunModel() {
+  // Stockier, shorter than the rifle, with a wide barrel and a visible shell-loading port on
+  // the underside near the receiver (where ammo boxes "load" shells, per the crafting notes).
+  const group = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0x2b2b31, roughness: 0.4, metalness: 0.8 });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x5c3d20, roughness: 0.75, metalness: 0.05 });
+  const darkGrip = new THREE.MeshStandardMaterial({ color: 0x1a1a1d, roughness: 0.7, metalness: 0.2 });
+
+  const bodyLen = 0.4;
+  const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, bodyLen), metal);
+  bodyMesh.position.set(0, 0.02, -bodyLen / 2 + 0.05);
+  group.add(bodyMesh);
+
+  const barrelLen = 0.34;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, barrelLen, 12), metal);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.035, -bodyLen + 0.05 - barrelLen / 2);
+  group.add(barrel);
+
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.2), wood);
+  stock.position.set(0, 0.01, 0.16);
+  group.add(stock);
+
+  const foreGripMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.16, 10), wood);
+  foreGripMesh.rotation.x = Math.PI / 2;
+  foreGripMesh.position.set(0, -0.015, -0.28);
+  group.add(foreGripMesh);
+
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.12, 0.045), darkGrip);
+  grip.position.set(0, -0.06, 0.05);
+  grip.rotation.x = -0.18;
+  group.add(grip);
+
+  // shell port: a small open box on the underside near the receiver, visually marking where
+  // an ammo box's shells get loaded in
+  const shellPort = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.08), new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.6 }));
+  shellPort.position.set(0, -0.03, 0.02);
+  group.add(shellPort);
+
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0.035, -bodyLen + 0.05 - barrelLen);
+  group.add(muzzle);
+
+  const handleGrip = new THREE.Object3D();
+  handleGrip.position.copy(grip.position);
+  handleGrip.rotation.copy(grip.rotation);
+  group.add(handleGrip);
+
+  const foreGrip = new THREE.Object3D();
+  foreGrip.position.copy(foreGripMesh.position);
+  group.add(foreGrip);
+
+  return { group, muzzle, handleGrip, foreGrip, bodyLen };
+}
+
+
+function buildNumberModel(n) {
+  // A simple 3D "number" plaque: a flat plate with a canvas-textured digit on the front face.
+  const group = new THREE.Group();
+  const plateMat = new THREE.MeshStandardMaterial({ color: 0x35424e, roughness: 0.6, metalness: 0.2 });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.03), plateMat);
+  group.add(plate);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 160;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#eef3f7';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#1c2b38';
+  ctx.font = 'bold 120px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(n), canvas.width / 2, canvas.height / 2 + 6);
+  const texture = new THREE.CanvasTexture(canvas);
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.2, 0.26),
+    new THREE.MeshBasicMaterial({ map: texture })
+  );
+  face.position.z = 0.016;
+  group.add(face);
+
+  return { group, isNumberPlaque: true };
+}
+
+function makeWeaponPhysBody(kind) {
+  if (kind === 'sword') {
+    return new CANNON.Body({
+      mass: 3.2, // heavy
+      material: weaponPhysMaterial,
+      shape: new CANNON.Box(new CANNON.Vec3(0.03, 0.02, 0.4)),
+      linearDamping: 0.2,
+      angularDamping: 0.6
+    });
+  }
+  if (kind === 'pickaxe') {
+    return new CANNON.Body({
+      mass: 3.9, // slightly heavier than the sword
+      material: weaponPhysMaterial,
+      shape: new CANNON.Box(new CANNON.Vec3(0.035, 0.035, 0.45)),
+      linearDamping: 0.22,
+      angularDamping: 0.65
+    });
+  }
+  if (kind === 'ironHammer') {
+    return new CANNON.Body({
+      mass: 4.5, // top-heavy and noticeably heavier than the sword/pickaxe
+      material: weaponPhysMaterial,
+      shape: new CANNON.Box(new CANNON.Vec3(0.05, 0.05, 0.35)),
+      linearDamping: 0.25,
+      angularDamping: 0.55
+    });
+  }
+  if (kind === 'numberPlaque') {
+    return new CANNON.Body({
+      mass: 0.5,
+      material: weaponPhysMaterial,
+      shape: new CANNON.Box(new CANNON.Vec3(0.11, 0.14, 0.015)),
+      linearDamping: 0.1,
+      angularDamping: 0.4
+    });
+  }
+  const len = kind === 'rifle' ? 0.55 : kind === 'sniper' ? 0.68 : kind === 'shotgun' ? 0.5 : 0.28;
+  return new CANNON.Body({
+    mass: kind === 'rifle' ? 1.4 : kind === 'sniper' ? 1.7 : kind === 'shotgun' ? 2.0 : 0.6,
+    material: weaponPhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(0.05, 0.07, len / 2)),
+    linearDamping: 0.1,
+    angularDamping: 0.4
+  });
+}
+
+function spawnWeapon(kind, position) {
+  let model;
+  if (kind === 'sword') model = buildSwordModel();
+  else if (kind === 'pickaxe') model = buildPickaxeModel();
+  else if (kind === 'ironHammer') model = buildIronHammerModel();
+  else if (kind === 'shotgun') model = buildShotgunModel();
+  else if (kind === 'numberPlaque_placeholder') model = null; // unused, numbers use spawnNumberPlaque
+  else model = buildGunModel(kind);
+
+  model.group.position.copy(position);
+  scene.add(model.group);
+
+  const body = makeWeaponPhysBody(kind);
+  body.position.set(position.x, position.y, position.z);
+  world.addBody(body);
+
+  const weapon = {
+    kind, // 'pistol' | 'rifle' | 'sniper' | 'shotgun' | 'sword' | 'pickaxe' | 'ironHammer'
+    model,
+    body,
+    // grabHandles: named attach points a hand can lock onto, each with a local offset transform
+    // relative to the model group. Grabbing snaps the hand to these exact poses (fixed hold),
+    // rather than an arbitrary hand-relative offset.
+    heldBy: {}, // handleName -> controller
+    fireCooldown: 0,
+    swingDamageCooldown: 0,
+    isEquippedWeapon: true,
+    ammoLoaded: ammoCapacityFor(kind) || undefined // guns start fully loaded; melee weapons stay undefined
+  };
+  weapons.push(weapon);
+  return weapon;
+}
+
+// Returns the list of {name, localPos, localQuat, twoHandedAllowed} grab handles for a weapon kind.
+function getWeaponHandles(weapon) {
+  if (weapon.kind === 'sword' || weapon.kind === 'pickaxe') {
+    return [
+      { name: 'handle', obj: weapon.model.handleGrip, allowShoot: false },
+      { name: 'rear', obj: weapon.model.rearGrip, allowShoot: false }
+    ];
+  }
+  if (weapon.kind === 'ironHammer') {
+    // single anchor point — the hammer swings freely around this grip rather than being held
+    // rigidly along its length
+    return [{ name: 'handle', obj: weapon.model.anchorGrip, allowShoot: false }];
+  }
+  const handles = [{ name: 'handle', obj: weapon.model.handleGrip, allowShoot: true }];
+  if (weapon.model.foreGrip) handles.push({ name: 'grip', obj: weapon.model.foreGrip, allowShoot: false });
+  return handles;
+}
+
+function findNearestWeaponHandle(controllerPos) {
+  let best = null;
+  let bestDist = WEAPON_GRAB_DISTANCE;
+  for (const weapon of weapons) {
+    if (weapon.consumedInCraft) continue;
+    for (const h of getWeaponHandles(weapon)) {
+      if (weapon.heldBy[h.name]) continue; // already held
+      const worldPos = new THREE.Vector3();
+      h.obj.getWorldPosition(worldPos);
+      const dist = controllerPos.distanceTo(worldPos);
+      if (dist < bestDist) { bestDist = dist; best = { weapon, handle: h }; }
+    }
+  }
+  return best;
+}
+
+function weaponHandleCount(weapon) {
+  return Object.keys(weapon.heldBy).filter(k => weapon.heldBy[k]).length;
+}
+
+function grabWeaponHandle(controller, weapon, handle) {
+  weapon.heldBy[handle.name] = controller;
+  controller.userData.heldWeapon = { weapon, handleName: handle.name };
+
+  // becoming held (by at least one hand) makes the body kinematic so we can drive it directly
+  weapon.body.type = CANNON.Body.KINEMATIC;
+  weapon.body.velocity.set(0, 0, 0);
+  weapon.body.angularVelocity.set(0, 0, 0);
+
+  // sword/pickaxe/hammer: hold with both hands without switching -> if grabbing the second grip,
+  // keep the first hand's grip too (two-handing), and lower effective weight while both hands are
+  // on it. The hammer always uses this lag-driven path too since it swings around its anchor.
+  if ((weapon.kind === 'sword' || weapon.kind === 'pickaxe' || weapon.kind === 'ironHammer') && !weapon.handLagPos) {
+    weapon.handLagPos = new THREE.Vector3().copy(weapon.model.group.position);
+    weapon.handLagQuat = new THREE.Quaternion().copy(weapon.model.group.quaternion);
+  }
+}
+
+function releaseWeaponHandle(controller) {
+  const held = controller.userData.heldWeapon;
+  if (!held) return;
+  const { weapon, handleName } = held;
+  weapon.heldBy[handleName] = null;
+  controller.userData.heldWeapon = null;
+
+  if (weaponHandleCount(weapon) === 0) {
+    // fully let go — hand it back to normal dynamic physics, throw with tracked hand velocity
+    weapon.body.type = CANNON.Body.DYNAMIC;
+    weapon.body.wakeUp();
+    const throwVel = controller.userData.linearVelocity.clone().multiplyScalar(THROW_MULTIPLIER);
+    weapon.body.velocity.set(throwVel.x, throwVel.y, throwVel.z);
+    const av = controller.userData.angularVelocity;
+    weapon.body.angularVelocity.set(av.x, av.y, av.z);
+    weapon.handLagPos = null;
+    weapon.handLagQuat = null;
+  }
+}
+
+// Computes the world transform the weapon SHOULD have, given which grip(s) are held,
+// by solving for the group transform that places the primary handle at the primary hand's pose.
+function computeWeaponTargetTransform(weapon) {
+  // Prefer the 'handle' grip as the primary reference point (it's the trigger/main hand for
+  // guns, and the front grip for the sword); fall back to whichever grip is actually held.
+  const primaryController = weapon.heldBy.handle || weapon.heldBy[Object.keys(weapon.heldBy).find(k => weapon.heldBy[k])];
+  if (!primaryController) return null;
+
+  const { pos: handPos, quat: handQuat } = getControllerWorldPose(primaryController);
+
+  // local offset of the primary handle relative to the model group's own origin/orientation
+  const handles = getWeaponHandles(weapon);
+  const primaryHandle = handles.find(h => weapon.heldBy[h.name] === primaryController) || handles[0];
+  const localPos = primaryHandle.obj.position;
+  const localQuat = primaryHandle.obj.quaternion;
+
+  // desired group orientation = handQuat * inverse(localQuat)  (so localQuat rotated by result == handQuat)
+  const targetQuat = handQuat.clone().multiply(localQuat.clone().invert());
+  // desired group position = handPos - (localPos rotated by targetQuat)
+  const rotatedLocal = localPos.clone().applyQuaternion(targetQuat);
+  const targetPos = handPos.clone().sub(rotatedLocal);
+
+  // Rifle/sniper two-handed aim assist: if the fore-grip is also held, bias orientation so the
+  // barrel (local -Z axis) points toward the fore-grip hand, like actually gripping a long gun
+  // with both hands along its length. Built directly from an orthonormal basis rather than a
+  // lookAt() call, so the forward-axis convention is unambiguous. Sniper included here (it used
+  // to be rifle-only) since without this assist its two-handed hold fights the fore-grip hand
+  // instead of settling into a stable aimed pose — which read as "can't hold it with both hands".
+  if ((weapon.kind === 'rifle' || weapon.kind === 'sniper') && weapon.heldBy.grip && weapon.heldBy.handle) {
+    const { pos: forePos } = getControllerWorldPose(weapon.heldBy.grip);
+    const desiredForward = forePos.clone().sub(targetPos).normalize(); // barrel should point this way
+    if (desiredForward.lengthSq() > 0.0001) {
+      const refUp = new THREE.Vector3(0, 1, 0).applyQuaternion(targetQuat);
+      let right = new THREE.Vector3().crossVectors(desiredForward, refUp);
+      if (right.lengthSq() < 0.0001) right = new THREE.Vector3(1, 0, 0).applyQuaternion(targetQuat);
+      right.normalize();
+      const up = new THREE.Vector3().crossVectors(right, desiredForward).normalize();
+      // local -Z = desiredForward, local +Y = up, local +X = right
+      const basis = new THREE.Matrix4().makeBasis(right, up, desiredForward.clone().negate());
+      const lookQuat = new THREE.Quaternion().setFromRotationMatrix(basis);
+      // blend mostly toward the two-hand look direction for a stable, realistic hold
+      targetQuat.slerp(lookQuat, 0.85);
+      const rotatedLocal2 = localPos.clone().applyQuaternion(targetQuat);
+      targetPos.copy(handPos).sub(rotatedLocal2);
+    }
+  }
+
+  return { pos: targetPos, quat: targetQuat };
+}
+
+const SWORD_HAND_LAG_ONE_HANDED = 7.0;  // lower = heavier/more lag when swung fast
+const SWORD_HAND_LAG_TWO_HANDED = 13.0; // two hands makes it easier to swing (less lag)
+// Pickaxe is slightly heavier than the sword -> lower lag-speed constants (more trailing lag).
+const PICKAXE_HAND_LAG_ONE_HANDED = 5.4;
+const PICKAXE_HAND_LAG_TWO_HANDED = 10.5;
+// Iron Hammer: top-heavy and single-anchored -> the most pronounced lag of any melee weapon,
+// so the head visibly trails and swings around the hand instead of tracking it directly.
+const HAMMER_HAND_LAG = 3.6;
+
+function driveHeldWeapons(delta) {
+  for (const weapon of weapons) {
+    if (weaponHandleCount(weapon) === 0) continue;
+    const target = computeWeaponTargetTransform(weapon);
+    if (!target) continue;
+
+    if (weapon.kind === 'sword' || weapon.kind === 'pickaxe' || weapon.kind === 'ironHammer') {
+      // Weight simulation: the weapon's actual pose lags behind the target (hand) pose,
+      // more so with fast motion and one-handed grip — i.e. swing too fast and the blade/head
+      // trails behind the hand instead of snapping instantly to it.
+      const twoHanded = weaponHandleCount(weapon) >= 2;
+      const isPickaxe = weapon.kind === 'pickaxe';
+      const isHammer = weapon.kind === 'ironHammer';
+      const lagSpeed = isHammer
+        ? HAMMER_HAND_LAG
+        : isPickaxe
+          ? (twoHanded ? PICKAXE_HAND_LAG_TWO_HANDED : PICKAXE_HAND_LAG_ONE_HANDED)
+          : (twoHanded ? SWORD_HAND_LAG_TWO_HANDED : SWORD_HAND_LAG_ONE_HANDED);
+      const lerpAmount = THREE.MathUtils.clamp(lagSpeed * delta, 0, 1);
+      weapon.handLagPos.lerp(target.pos, lerpAmount);
+      weapon.handLagQuat.slerp(target.quat, lerpAmount);
+      weapon.body.position.set(weapon.handLagPos.x, weapon.handLagPos.y, weapon.handLagPos.z);
+      weapon.body.quaternion.set(weapon.handLagQuat.x, weapon.handLagQuat.y, weapon.handLagQuat.z, weapon.handLagQuat.w);
+    } else {
+      // guns: fixed, instant hold (no arbitrary offset — always held correctly)
+      weapon.body.position.set(target.pos.x, target.pos.y, target.pos.z);
+      weapon.body.quaternion.set(target.quat.x, target.quat.y, target.quat.z, target.quat.w);
+    }
+
+    if (weapon.fireCooldown > 0) weapon.fireCooldown = Math.max(0, weapon.fireCooldown - delta);
+    if (weapon.swingDamageCooldown > 0) weapon.swingDamageCooldown = Math.max(0, weapon.swingDamageCooldown - delta);
+  }
+}
+
+// ================================================================
+// Sniper scope zoom — narrows the camera FOV when the player's eye is lined up behind the
+// scope (two-handed grip + head close to and roughly aligned with the scope's eye point),
+// giving the scope an actual gameplay effect instead of being a decorative model only.
+// ================================================================
+const SCOPE_EYE_MAX_DIST = 0.16;   // how close the head must be to the eye point to count as "looking through it"
+const SCOPE_ALIGN_MIN_DOT = 0.85;  // how closely the view direction must match the scope's aim axis
+const SCOPE_ZOOM_LERP = 8.0;       // FOV transition speed
+
+function updateSniperScopeZoom(delta) {
+  let wantZoom = false;
+
+  for (const weapon of weapons) {
+    if (weapon.kind !== 'sniper') continue;
+    if (weaponHandleCount(weapon) < 2) continue; // needs both grip + handle held to steady the scope
+    if (!weapon.model.scopeEye) continue;
+
+    const eyeWorldPos = new THREE.Vector3();
+    weapon.model.scopeEye.getWorldPosition(eyeWorldPos);
+
+    const headPos = new THREE.Vector3();
+    camera.getWorldPosition(headPos);
+    const dist = headPos.distanceTo(eyeWorldPos);
+    if (dist > SCOPE_EYE_MAX_DIST) continue;
+
+    // scope's own aim axis (local -Z of the gun model, pointing out the barrel) vs. where the
+    // player is actually looking — both must roughly agree, so glancing near the scope from an
+    // odd angle doesn't accidentally trigger the zoom.
+    const scopeForward = new THREE.Vector3(0, 0, -1);
+    weapon.model.group.getWorldQuaternion(_tmpQuat);
+    scopeForward.applyQuaternion(_tmpQuat);
+    const headForward = new THREE.Vector3();
+    camera.getWorldDirection(headForward);
+    if (scopeForward.dot(headForward) < SCOPE_ALIGN_MIN_DOT) continue;
+
+    wantZoom = true;
+    break;
+  }
+
+  if (Math.abs(camera.fov - (wantZoom ? SNIPER_ZOOM_FOV : BASE_FOV)) > 0.01) {
+    camera.fov = THREE.MathUtils.lerp(camera.fov, wantZoom ? SNIPER_ZOOM_FOV : BASE_FOV, THREE.MathUtils.clamp(SCOPE_ZOOM_LERP * delta, 0, 1));
+    camera.updateProjectionMatrix();
+  }
+}
+
+// ================================================================
+// Shooting + ammo
+// ================================================================
+const FIRE_COOLDOWN_PISTOL = 0.7;
+const FIRE_COOLDOWN_RIFLE = 0.4;
+const FIRE_COOLDOWN_SNIPER = 1.1;
+const FIRE_COOLDOWN_SHOTGUN = 0.9;
+const BULLET_SPEED_PISTOL = 9;
+const BULLET_SPEED_RIFLE = 16;
+const BULLET_SPEED_SNIPER = BULLET_SPEED_RIFLE * 3; // 3x more velocity than the rifle, as requested
+const BULLET_SPEED_SHOTGUN = 13;
+const RIFLE_SPREAD_HIP = 0.09;      // radians, one-handed
+const RIFLE_SPREAD_AIMED = 0.015;   // radians, held with both grip + handle
+const SNIPER_SPREAD_HIP = 0.05;
+const SNIPER_SPREAD_AIMED = 0.003;  // scoped: very tight
+const SHOTGUN_PELLET_COUNT = 7;
+const SHOTGUN_SPREAD = 0.16;
+
+// Magazine/cylinder capacities, as requested: pistol 7, rifle 20, sniper 5, shotgun 4.
+const AMMO_CAPACITY = { pistol: 7, rifle: 20, sniper: 5, shotgun: 4 };
+
+// Player's ammo belt: loose bullets carried, refilled from ammo boxes (20 per box).
+let ammoBeltCount = 0;
+
+function ammoCapacityFor(kind) { return AMMO_CAPACITY[kind] || 0; }
+
+// Reload: called when the trigger hand touches a gun's loading point while NOT holding the
+// trigger to fire (i.e. via the reload touch-zone below) — pulls bullets one at a time from the
+// belt into the weapon's magazine/cylinder, up to its capacity.
+function reloadWeaponFromBelt(weapon) {
+  const capacity = ammoCapacityFor(weapon.kind);
+  if (!capacity) return false;
+  weapon.ammoLoaded = weapon.ammoLoaded || 0;
+  if (weapon.ammoLoaded >= capacity || ammoBeltCount <= 0) return false;
+  weapon.ammoLoaded++;
+  ammoBeltCount--;
+  return true;
+}
+
+function tryFireHeldWeapon(controller) {
+  const held = controller.userData.heldWeapon;
+  if (!held) return;
+  const { weapon, handleName } = held;
+
+  // only the trigger/"handle" grip can fire
+  const handles = getWeaponHandles(weapon);
+  const handleInfo = handles.find(h => h.name === handleName);
+  if (!handleInfo || !handleInfo.allowShoot) return;
+  if (weapon.kind === 'sword' || weapon.kind === 'pickaxe' || weapon.kind === 'ironHammer') return; // melee tools don't shoot
+  if (weapon.fireCooldown > 0) return;
+
+  const capacity = ammoCapacityFor(weapon.kind);
+  if (capacity) {
+    weapon.ammoLoaded = weapon.ammoLoaded === undefined ? capacity : weapon.ammoLoaded; // guns start full
+    if (weapon.ammoLoaded <= 0) return; // out of ammo — needs a reload from the belt
+    weapon.ammoLoaded--;
+  }
+
+  const muzzlePos = new THREE.Vector3();
+  weapon.model.muzzle.getWorldPosition(muzzlePos);
+  const muzzleDir = new THREE.Vector3(0, 0, -1);
+  weapon.model.group.getWorldQuaternion(_tmpQuat);
+  muzzleDir.applyQuaternion(_tmpQuat);
+
+  let speed = BULLET_SPEED_PISTOL;
+  weapon.fireCooldown = FIRE_COOLDOWN_PISTOL;
+
+  if (weapon.kind === 'rifle' || weapon.kind === 'sniper') {
+    const isSniper = weapon.kind === 'sniper';
+    speed = isSniper ? BULLET_SPEED_SNIPER : BULLET_SPEED_RIFLE;
+    weapon.fireCooldown = isSniper ? FIRE_COOLDOWN_SNIPER : FIRE_COOLDOWN_RIFLE;
+    const aimed = !!weapon.heldBy.grip; // holding the fore-grip lowers spread significantly
+    const spread = isSniper
+      ? (aimed ? SNIPER_SPREAD_AIMED : SNIPER_SPREAD_HIP)
+      : (aimed ? RIFLE_SPREAD_AIMED : RIFLE_SPREAD_HIP);
+    // small random cone deviation around the aim direction
+    const jitterYaw = (Math.random() - 0.5) * 2 * spread;
+    const jitterPitch = (Math.random() - 0.5) * 2 * spread;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_tmpQuat);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_tmpQuat);
+    muzzleDir.applyAxisAngle(right, jitterPitch).applyAxisAngle(up, jitterYaw).normalize();
+    spawnBullet(muzzlePos, muzzleDir, speed, weapon.kind);
+  } else if (weapon.kind === 'shotgun') {
+    // firing once only uses one shell but sends out a spread blast of several gray pellets,
+    // each one still counting as a bullet for crafting/mining/damage purposes
+    weapon.fireCooldown = FIRE_COOLDOWN_SHOTGUN;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_tmpQuat);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_tmpQuat);
+    for (let i = 0; i < SHOTGUN_PELLET_COUNT; i++) {
+      const jitterYaw = (Math.random() - 0.5) * 2 * SHOTGUN_SPREAD;
+      const jitterPitch = (Math.random() - 0.5) * 2 * SHOTGUN_SPREAD;
+      const pelletDir = muzzleDir.clone().applyAxisAngle(right, jitterPitch).applyAxisAngle(up, jitterYaw).normalize();
+      spawnBullet(muzzlePos, pelletDir, BULLET_SPEED_SHOTGUN, weapon.kind, 0xaaaaaa);
+    }
+  } else {
+    spawnBullet(muzzlePos, muzzleDir, speed, weapon.kind);
+  }
+}
+const _tmpQuat = new THREE.Quaternion();
+
+// Place the initial pistol at the top of the slope, as requested.
+// The top platform spans TOP_X_MIN..TOP_X_MAX and TOP_Z_MIN..TOP_Z_MAX at height RAMP_HEIGHT;
+// rest the pistol just above its surface, near the platform's center.
+const startingPistol = spawnWeapon('pistol', new THREE.Vector3(0.8, RAMP_HEIGHT + 0.15, (TOP_Z_MIN + TOP_Z_MAX) / 2));
+startingPistol.body.quaternion.setFromEuler(0, Math.PI, 0);
+
+// A couple of starting ammo boxes near spawn/the pistol, so ammo is available immediately
+// rather than only through crafting.
+spawnAmmoBoxAtPosition(new THREE.Vector3(1.2, RAMP_HEIGHT + 0.2, (TOP_Z_MIN + TOP_Z_MAX) / 2 + 0.6));
+spawnAmmoBoxAtPosition(new THREE.Vector3(-1.0, 0.3, 4.2));
+
+// ================================================================
+// Bullets — small fast spheres, velocity-based damage, craftable
+// ================================================================
+const BULLET_RADIUS = 0.035;
+const bullets = []; // { mesh, body, spawnTime, spawnedFromWeapon }
+const bulletPhysMaterial = new CANNON.Material('bullet');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, bulletPhysMaterial, { friction: 0.3, restitution: 0.1 }));
+world.addContactMaterial(new CANNON.ContactMaterial(bulletPhysMaterial, bulletPhysMaterial, { friction: 0.3, restitution: 0.1 }));
+
+function spawnBullet(originPos, direction, speed, sourceKind, colorOverride) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(BULLET_RADIUS, 10, 8),
+    colorOverride
+      ? new THREE.MeshStandardMaterial({ color: colorOverride, roughness: 0.5, metalness: 0.4 })
+      : new THREE.MeshStandardMaterial({ color: 0xfff2b0, emissive: 0xffaa00, emissiveIntensity: 0.6, roughness: 0.3 })
+  );
+  mesh.position.copy(originPos);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: 0.02,
+    material: bulletPhysMaterial,
+    shape: new CANNON.Sphere(BULLET_RADIUS),
+    linearDamping: 0.01,
+    angularDamping: 0.1
+  });
+  body.position.set(originPos.x, originPos.y, originPos.z);
+  const vel = direction.clone().normalize().multiplyScalar(speed);
+  body.velocity.set(vel.x, vel.y, vel.z);
+  world.addBody(body);
+
+  const bulletState = {
+    mesh, body,
+    isBullet: true, // special variable used by the crafting table to detect a bullet hit
+    spawnTime: simTime,
+    hitDummyRecently: 0,
+    sourceKind: sourceKind || null
+  };
+  bullets.push(bulletState);
+  return bulletState;
+}
+
+const BULLET_LIFETIME = 4.0; // seconds before a stray bullet is cleaned up
+
+// ================================================================
+// Crafting table
+// ================================================================
+const CRAFT_TABLE_POS = new THREE.Vector3(4.5, 0, 3.5);
+const CRAFT_SURFACE_Y = 0.55; // top surface height
+const CRAFT_ZONE_RADIUS = 0.85; // widened along with the table itself
+
+// Recipes now specify counts per material type (cubes/balls/ironCubes/ironBars); any field left
+// out defaults to 0. `kind` distinguishes what gets spawned on a successful craft.
+const craftRecipes = {
+  pistol:     { label: 'Pistol',      ironCubes: 1, kind: 'weapon' },
+  rifle:      { label: 'Rifle',       ironBars: 5, balls: 6, cubes: 3, kind: 'weapon' },
+  sniper:     { label: 'Sniper',      ironBars: 7, balls: 3, cubes: 1, kind: 'weapon' },
+  shotgun:    { label: 'Shotgun',     ironBars: 3, balls: 8, cubes: 5, kind: 'weapon' },
+  sword:      { label: 'Sword',       ironBars: 1, balls: 5, cubes: 2, kind: 'weapon' },
+  pickaxe:    { label: 'Pickaxe',     cubes: 1, kind: 'weapon' },
+  ironHammer: { label: 'Iron Hammer', ironBars: 2, balls: 3, cubes: 1, kind: 'weapon' },
+  bigCube:    { label: 'Big Cube',    cubes: 6, ironCubes: 2, kind: 'material' },
+  ironCubeR:  { label: 'Iron Cube',   cubes: 3, kind: 'material' },
+  ironBarR:   { label: 'Iron Bar',    ironCubes: 3, cubes: 1, kind: 'material' },
+  ammoBoxR:   { label: 'Ammo Box',    cubes: 4, balls: 2, kind: 'ammoBox' }
+};
+const recipeOrder = ['pistol', 'rifle', 'sniper', 'shotgun', 'sword', 'pickaxe', 'ironHammer', 'bigCube', 'ironCubeR', 'ironBarR', 'ammoBoxR'];
+for (let n = 1; n <= 9; n++) {
+  const key = 'number' + n;
+  craftRecipes[key] = { label: 'Number ' + n, balls: n, kind: 'number', n };
+  recipeOrder.push(key);
+}
+let selectedRecipe = 'pistol';
+
+const craftTableGroup = new THREE.Group();
+craftTableGroup.position.copy(CRAFT_TABLE_POS);
+scene.add(craftTableGroup);
+
+// Table widened (as requested) to comfortably fit the larger multi-material recipes.
+const TABLE_HALF = 0.85;
+const tableTopMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(TABLE_HALF * 2, 0.08, TABLE_HALF * 2),
+  new THREE.MeshStandardMaterial({ color: 0x7b5230, roughness: 0.8 })
+);
+tableTopMesh.position.y = CRAFT_SURFACE_Y;
+craftTableGroup.add(tableTopMesh);
+
+const legGeo = new THREE.BoxGeometry(0.08, CRAFT_SURFACE_Y - 0.04, 0.08);
+const legMat = new THREE.MeshStandardMaterial({ color: 0x5c3d20, roughness: 0.85 });
+const legInset = TABLE_HALF - 0.12;
+for (const [lx, lz] of [[legInset, legInset], [-legInset, legInset], [legInset, -legInset], [-legInset, -legInset]]) {
+  const leg = new THREE.Mesh(legGeo, legMat);
+  leg.position.set(lx, (CRAFT_SURFACE_Y - 0.04) / 2, lz);
+  craftTableGroup.add(leg);
+}
+
+// static physics body so items can rest on the table
+const craftTableBody = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+craftTableBody.addShape(new CANNON.Box(new CANNON.Vec3(TABLE_HALF, 0.04, TABLE_HALF)), new CANNON.Vec3(0, CRAFT_SURFACE_Y, 0));
+for (const [lx, lz] of [[legInset, legInset], [-legInset, legInset], [legInset, -legInset], [-legInset, -legInset]]) {
+  craftTableBody.addShape(new CANNON.Box(new CANNON.Vec3(0.04, (CRAFT_SURFACE_Y - 0.04) / 2, 0.04)), new CANNON.Vec3(lx, (CRAFT_SURFACE_Y - 0.04) / 2, lz));
+}
+craftTableBody.position.set(CRAFT_TABLE_POS.x, CRAFT_TABLE_POS.y, CRAFT_TABLE_POS.z);
+world.addBody(craftTableBody);
+teleportTargets.push(tableTopMesh); // let players teleport onto the table area's floor level too (harmless)
+
+// --- Recipe select button (a pressable panel on the front edge of the table) ---
+const recipeButtonGroup = new THREE.Group();
+recipeButtonGroup.position.set(0, CRAFT_SURFACE_Y + 0.04, TABLE_HALF - 0.03);
+craftTableGroup.add(recipeButtonGroup);
+
+const recipeButtonBase = new THREE.Mesh(
+  new THREE.BoxGeometry(0.36, 0.08, 0.05),
+  new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.6 })
+);
+recipeButtonGroup.add(recipeButtonBase);
+
+// Canvas-based label so we can show the current recipe text and update it live.
+const labelCanvas = document.createElement('canvas');
+labelCanvas.width = 320; labelCanvas.height = 72;
+const labelCtx = labelCanvas.getContext('2d');
+const labelTexture = new THREE.CanvasTexture(labelCanvas);
+
+const MATERIAL_LABELS = { cubes: 'cube', balls: 'ball', ironCubes: 'iron cube', ironBars: 'iron bar' };
+
+function drawRecipeLabel() {
+  const r = craftRecipes[selectedRecipe];
+  labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+  labelCtx.fillStyle = '#222';
+  labelCtx.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
+  labelCtx.fillStyle = '#fff';
+  labelCtx.font = 'bold 26px sans-serif';
+  labelCtx.textAlign = 'center';
+  labelCtx.fillText(r.label, labelCanvas.width / 2, 28);
+  labelCtx.font = '15px sans-serif';
+  const parts = [];
+  for (const key of ['cubes', 'balls', 'ironCubes', 'ironBars']) {
+    const n = r[key] || 0;
+    if (n > 0) parts.push(`${n} ${MATERIAL_LABELS[key]}${n === 1 ? '' : 's'}`);
+  }
+  labelCtx.fillText(parts.join(', ') || 'no materials needed', labelCanvas.width / 2, 54);
+  labelTexture.needsUpdate = true;
+}
+drawRecipeLabel();
+
+const recipeLabelMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.34, 0.076),
+  new THREE.MeshBasicMaterial({ map: labelTexture })
+);
+recipeLabelMesh.position.set(0, 0, 0.026);
+recipeButtonGroup.add(recipeLabelMesh);
+
+function cycleRecipe() {
+  const idx = recipeOrder.indexOf(selectedRecipe);
+  selectedRecipe = recipeOrder[(idx + 1) % recipeOrder.length];
+  drawRecipeLabel();
+  // small press feedback
+  recipeButtonGroup.position.z -= 0.015;
+  setTimeout(() => { recipeButtonGroup.position.z += 0.015; }, 120);
+}
+
+// The button is pressed by touching it with a hand (sphere) — checked each frame below.
+let recipeButtonCooldown = 0;
+
+// --- Craft resolution: consumes items resting on the table when it's shot with a bullet ---
+function tryCraftFromTable() {
+  const r = craftRecipes[selectedRecipe];
+
+  // gather materials currently resting on (near) the table surface
+  const onTable = grabbableItems.filter(item => {
+    if (item.grabbedBy) return false; // must be placed down, not held
+    const p = item.mesh.position;
+    const dx = p.x - CRAFT_TABLE_POS.x, dz = p.z - CRAFT_TABLE_POS.z;
+    const horizDist = Math.sqrt(dx * dx + dz * dz);
+    const onSurface = p.y > CRAFT_SURFACE_Y + 0.02 && p.y < CRAFT_SURFACE_Y + 0.6;
+    return onSurface && horizDist < CRAFT_ZONE_RADIUS;
+  });
+
+  const byType = {
+    cubes: onTable.filter(i => i.itemType === 'cube'),
+    balls: onTable.filter(i => i.itemType === 'ball'),
+    ironCubes: onTable.filter(i => i.itemType === 'ironCube'),
+    ironBars: onTable.filter(i => i.itemType === 'ironBar')
+  };
+
+  for (const key of ['cubes', 'balls', 'ironCubes', 'ironBars']) {
+    if (byType[key].length < (r[key] || 0)) return false; // not enough materials
+  }
+
+  // consume exactly the required amount of each material
+  for (const key of ['cubes', 'balls', 'ironCubes', 'ironBars']) {
+    const need = r[key] || 0;
+    for (let i = 0; i < need; i++) removeGrabbableItem(byType[key][i]);
+  }
+
+  const spawnPos = new THREE.Vector3(CRAFT_TABLE_POS.x, CRAFT_TABLE_POS.y + CRAFT_SURFACE_Y + 0.15, CRAFT_TABLE_POS.z);
+  if (r.kind === 'number') {
+    const plaque = spawnNumberPlaqueAt(r.n, spawnPos);
+    plaque.body.velocity.set(0, 1.5, 0);
+  } else if (selectedRecipe === 'bigCube') {
+    const item = spawnBigCubeAtPosition(spawnPos);
+    if (item) item.body.velocity.set(0, 1.5, 0);
+  } else if (selectedRecipe === 'ironCubeR') {
+    const item = spawnIronCubeAtPosition(spawnPos);
+    if (item) item.body.velocity.set(0, 1.5, 0);
+  } else if (selectedRecipe === 'ironBarR') {
+    const item = spawnIronBarAtPosition(spawnPos);
+    if (item) item.body.velocity.set(0, 1.5, 0);
+  } else if (selectedRecipe === 'ammoBoxR') {
+    const item = spawnAmmoBoxAtPosition(spawnPos);
+    if (item) item.body.velocity.set(0, 1.5, 0);
+  } else {
+    const newWeapon = spawnWeapon(selectedRecipe, spawnPos);
+    newWeapon.body.velocity.set(0, 1.5, 0);
+  }
+  return true;
+}
+
+
+// ---- Number plaques (craftable 1-9 decorative models) — grabbable like cubes/balls ----
+function spawnNumberPlaqueAt(n, position) {
+  const model = buildNumberModel(n);
+  model.group.position.copy(position);
+  scene.add(model.group);
+
+  const body = new CANNON.Body({
+    mass: 0.5,
+    material: weaponPhysMaterial,
+    shape: new CANNON.Box(new CANNON.Vec3(0.11, 0.14, 0.015)),
+    linearDamping: 0.1,
+    angularDamping: 0.4
+  });
+  body.position.set(position.x, position.y, position.z);
+  world.addBody(body);
+
+  const item = {
+    itemType: 'numberPlaque',
+    number: n,
+    mesh: model.group,
+    body,
+    grabbedBy: null,
+    grabOffsetPos: new THREE.Vector3(),
+    grabOffsetQuat: new THREE.Quaternion(),
+    highlightAmount: 0,
+    isGroupMesh: true
+  };
+  grabbableItems.push(item);
+  return item;
+}
+
+function removeGrabbableItem(item) {
+  scene.remove(item.mesh);
+  world.removeBody(item.body);
+  const idx = grabbableItems.indexOf(item);
+  if (idx !== -1) grabbableItems.splice(idx, 1);
+  const cIdx = cubes.indexOf(item);
+  if (cIdx !== -1) cubes.splice(cIdx, 1);
+  const bIdx = balls.indexOf(item);
+  if (bIdx !== -1) balls.splice(bIdx, 1);
+  const mIdx = materialItems.indexOf(item);
+  if (mIdx !== -1) materialItems.splice(mIdx, 1);
+}
+
+// ================================================================
+// Target dummy — velocity-based damage readout
+// ================================================================
+const DUMMY_POS = new THREE.Vector3(-4, 0, -2);
+const DUMMY_HIT_IMMUNITY = 0.1; // seconds
+
+const dummyGroup = new THREE.Group();
+dummyGroup.position.copy(DUMMY_POS);
+scene.add(dummyGroup);
+
+const dummyMat = new THREE.MeshStandardMaterial({ color: 0xb5895a, roughness: 0.9 });
+const dummyPoleMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.6, metalness: 0.4 });
+
+const dummyPole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.5, 10), dummyPoleMat);
+dummyPole.position.y = 0.75;
+dummyGroup.add(dummyPole);
+
+const dummyTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.55, 6, 12), dummyMat);
+dummyTorso.position.y = 1.15;
+dummyGroup.add(dummyTorso);
+
+const dummyHead = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 12), dummyMat);
+dummyHead.position.y = 1.62;
+dummyGroup.add(dummyHead);
+
+const dummyArmGeo = new THREE.CapsuleGeometry(0.06, 0.4, 4, 8);
+const armL = new THREE.Mesh(dummyArmGeo, dummyMat);
+armL.position.set(-0.32, 1.25, 0);
+armL.rotation.z = Math.PI / 2.4;
+dummyGroup.add(armL);
+const armR = new THREE.Mesh(dummyArmGeo, dummyMat);
+armR.position.set(0.32, 1.25, 0);
+armR.rotation.z = -Math.PI / 2.4;
+dummyGroup.add(armR);
+
+const dummyBody = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+dummyBody.addShape(new CANNON.Cylinder(0.04, 0.04, 1.5, 10), new CANNON.Vec3(0, 0.75, 0));
+dummyBody.addShape(new CANNON.Sphere(0.3), new CANNON.Vec3(0, 1.15, 0)); // approx hit volume for torso+arms
+dummyBody.addShape(new CANNON.Sphere(0.16), new CANNON.Vec3(0, 1.62, 0));
+dummyBody.position.set(DUMMY_POS.x, DUMMY_POS.y, DUMMY_POS.z);
+world.addBody(dummyBody);
+
+// Pickaxe spawns right next to the target dummy, as requested.
+const startingPickaxe = spawnWeapon('pickaxe', new THREE.Vector3(DUMMY_POS.x + 0.6, 0.5, DUMMY_POS.z));
+startingPickaxe.body.quaternion.setFromEuler(0, Math.PI / 2, 0);
+
+let dummyLastHitTime = -999;
+
+// Generic physical-impact damage: any body that collides with the dummy deals damage based on
+// the impact speed at the moment of collision (all damage in this game is velocity-derived).
+dummyBody.addEventListener('collide', (evt) => {
+  const otherBody = evt.body;
+  const contact = evt.contact;
+  if (!contact) return;
+  // relative velocity along the contact normal at the moment of impact
+  const relVel = Math.abs(contact.getImpactVelocityAlongNormal ? contact.getImpactVelocityAlongNormal() : 0);
+  if (relVel < 0.4) return; // ignore gentle resting contact / negligible taps
+  const contactPointWorld = new THREE.Vector3(
+    dummyBody.position.x + (contact.ri ? contact.ri.x : 0),
+    dummyBody.position.y + (contact.ri ? contact.ri.y : 0),
+    dummyBody.position.z + (contact.ri ? contact.ri.z : 0)
+  );
+  const vel = new THREE.Vector3(otherBody.velocity.x, otherBody.velocity.y, otherBody.velocity.z);
+  // scale factor differs slightly from the bullet/sword path since this uses raw impact speed
+  damageDummyFromImpact(contactPointWorld, relVel, simTime);
+});
+
+function damageDummyFromImpact(hitPos, speed, nowTime) {
+  if (nowTime - dummyLastHitTime < DUMMY_HIT_IMMUNITY) return;
+  dummyLastHitTime = nowTime;
+  const damage = speed * 1.2;
+  spawnDamagePopup(hitPos, damage);
+}
+
+// Floating damage number sprites
+const damagePopups = []; // { sprite, life }
+function spawnDamagePopup(worldPos, amount) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 40px sans-serif';
+  ctx.fillStyle = '#ff3b30';
+  ctx.textAlign = 'center';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 4;
+  const text = amount.toFixed(1);
+  ctx.strokeText(text, 64, 40);
+  ctx.fillText(text, 64, 40);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(0.4, 0.2, 1);
+  sprite.position.copy(worldPos);
+  sprite.position.y += 0.1;
+  scene.add(sprite);
+  damagePopups.push({ sprite, life: 1.0 });
+}
+
+// Called whenever something with a known velocity strikes the dummy.
+function damageDummy(hitPos, velocity, nowTime, multiplier) {
+  if (nowTime - dummyLastHitTime < DUMMY_HIT_IMMUNITY) return;
+  dummyLastHitTime = nowTime;
+  const speed = velocity.length();
+  const damage = speed * 1.2 * (multiplier || 1); // all damage is derived from impact velocity
+  spawnDamagePopup(hitPos, damage);
+}
+
+// ================================================================
+// Rocks — minable, 100 HP, breakable by any impact (bullets, thrown items, melee)
+// ================================================================
+const ROCK_HP_MAX = 100;
+const IRON_ROCK_HP_MAX = 500;
+const ROCK_HIT_IMMUNITY = 0.12;
+const ROCK_RESPAWN_TIME = 25; // seconds
+const rocks = [];
+const ROCK_POSITIONS = [
+  [7, -6], [-7, -8], [9, 5], [-9, 4], [11.5, -3],
+  [-11, -1.5], [5.5, 12], [-5.5, 13], [13, 9], [-13, 8],
+  [2, -14], [-2.5, -16]
+];
+// A subset of the rock spots are special iron rocks (500 HP, guaranteed ball + 75% iron cube drop).
+const IRON_ROCK_INDICES = new Set([2, 5, 8, 11]);
+
+// Deterministic hash-based pseudo-noise, keyed by a rounded direction vector, so that vertices
+// which share the same position (duplicated per-face on a non-indexed icosahedron) always jitter
+// by the exact same amount. Independent per-vertex-copy jitter was what caused the old rocks to
+// look broken/cracked — faces around a shared corner would pull apart from each other.
+function directionJitter(nx, ny, nz) {
+  const kx = Math.round(nx * 1000), ky = Math.round(ny * 1000), kz = Math.round(nz * 1000);
+  let h = (kx * 374761393 + ky * 668265263 + kz * 2147483647) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  h = h ^ (h >>> 16);
+  return ((h >>> 0) / 4294967295); // 0..1
+}
+
+function buildRockGeometry(radius) {
+  const geo = new THREE.IcosahedronGeometry(radius, 1);
+  const posAttr = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < posAttr.count; i++) {
+    v.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+    const len = v.length() || 1;
+    const nx = v.x / len, ny = v.y / len, nz = v.z / len;
+    const noise = directionJitter(nx, ny, nz);
+    const jitter = 0.82 + noise * 0.34; // 0.82 .. 1.16, consistent per shared direction
+    posAttr.setXYZ(i, v.x * jitter, v.y * jitter, v.z * jitter);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function spawnRock(x, z, isIron) {
+  const scale = 0.75 + Math.random() * 0.7;
+  const radius = 0.45 * scale;
+  const mat = isIron
+    ? new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.7, metalness: 0.5, flatShading: true, emissive: 0x4a3018, emissiveIntensity: 0.08 })
+    : new THREE.MeshStandardMaterial({ color: 0x8a8f94, roughness: 0.95, flatShading: true });
+
+  // a small cluster of overlapping boulders reads as a natural rock formation and hides any
+  // remaining hard edges from the main body, instead of a single spiky/cracked blob
+  const group = new THREE.Group();
+  const mainGeo = buildRockGeometry(radius);
+  const mainMesh = new THREE.Mesh(mainGeo, mat);
+  group.add(mainMesh);
+
+  const smallCount = 1 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < smallCount; i++) {
+    const smallRadius = radius * (0.35 + Math.random() * 0.25);
+    const smallGeo = buildRockGeometry(smallRadius);
+    const smallMesh = new THREE.Mesh(smallGeo, mat);
+    const angle = Math.random() * Math.PI * 2;
+    const dist = radius * (0.55 + Math.random() * 0.25);
+    smallMesh.position.set(Math.cos(angle) * dist, (Math.random() - 0.5) * radius * 0.3, Math.sin(angle) * dist);
+    smallMesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    group.add(smallMesh);
+  }
+
+  const y = radius * 0.55;
+  group.position.set(x, y, z);
+  group.rotation.set(Math.random() * 0.3, Math.random() * Math.PI, Math.random() * 0.3);
+  scene.add(group);
+  const mesh = group;
+
+  const body = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+  body.addShape(new CANNON.Sphere(radius * 0.9));
+  body.position.set(x, y, z);
+  world.addBody(body);
+  teleportTargets.push(mesh); // harmless if aimed at; players just can't teleport inside it in practice
+
+  const rock = {
+    mesh, body, hp: isIron ? IRON_ROCK_HP_MAX : ROCK_HP_MAX, maxHp: isIron ? IRON_ROCK_HP_MAX : ROCK_HP_MAX,
+    dead: false, lastHitTime: -999, hitRadius: radius * 0.9 + 0.15, isIron: !!isIron, spawnX: x, spawnZ: z
+  };
+  rocks.push(rock);
+
+  body.addEventListener('collide', (evt) => {
+    if (rock.dead) return;
+    const contact = evt.contact;
+    if (!contact) return;
+    const relVel = Math.abs(contact.getImpactVelocityAlongNormal ? contact.getImpactVelocityAlongNormal() : 0);
+    if (relVel < 0.5) return;
+    damageRock(rock, relVel * 1.2);
+  });
+
+  return rock;
+}
+ROCK_POSITIONS.forEach(([x, z], i) => spawnRock(x, z, IRON_ROCK_INDICES.has(i)));
+
+function damageRock(rock, amount) {
+  if (rock.dead) return;
+  if (simTime - rock.lastHitTime < ROCK_HIT_IMMUNITY) return;
+  rock.lastHitTime = simTime;
+  rock.hp -= amount;
+  const popupPos = rock.mesh.position.clone();
+  popupPos.y += 0.3;
+  spawnDamagePopup(popupPos, amount);
+  if (rock.hp <= 0) breakRock(rock);
+}
+
+const pendingRockRespawns = []; // { x, z, isIron, respawnAt }
+
+function breakRock(rock) {
+  rock.dead = true;
+  scene.remove(rock.mesh);
+  world.removeBody(rock.body);
+  const tIdx = teleportTargets.indexOf(rock.mesh);
+  if (tIdx !== -1) teleportTargets.splice(tIdx, 1);
+  const rIdx = rocks.indexOf(rock);
+  if (rIdx !== -1) rocks.splice(rIdx, 1);
+
+  const dropPos = rock.mesh.position.clone();
+  dropPos.y += 0.35;
+
+  if (rock.isIron) {
+    // iron rocks: 100% chance to drop 1 ball, and a 75% chance to drop 1 iron cube
+    spawnBallAtPosition(dropPos);
+    if (Math.random() < 0.75) spawnIronCubeAtPosition(dropPos.clone().add(new THREE.Vector3(0.08, 0.08, 0.02)));
+  } else {
+    // regular rocks: always 1 cube, 50% chance of a ball, and a separate 50% chance of one more cube on top
+    spawnCubeAtPosition(dropPos);
+    if (Math.random() < 0.5) spawnBallAtPosition(dropPos.clone().add(new THREE.Vector3(0.08, 0.06, 0.02)));
+    if (Math.random() < 0.5) spawnCubeAtPosition(dropPos.clone().add(new THREE.Vector3(-0.08, 0.1, -0.02)));
+  }
+
+  // schedule a respawn at the same spot after 25 seconds
+  pendingRockRespawns.push({ x: rock.spawnX, z: rock.spawnZ, isIron: rock.isIron, respawnAt: simTime + ROCK_RESPAWN_TIME });
+}
+
+function updateRockRespawns() {
+  for (let i = pendingRockRespawns.length - 1; i >= 0; i--) {
+    const r = pendingRockRespawns[i];
+    if (simTime >= r.respawnAt) {
+      spawnRock(r.x, r.z, r.isIron);
+      pendingRockRespawns.splice(i, 1);
+    }
+  }
+}
+
+// ================================================================
+// Player health
+// ================================================================
+const PLAYER_MAX_HEALTH = 100;
+let playerHealth = PLAYER_MAX_HEALTH;
+const PLAYER_HIT_IMMUNITY = 0.3;
+let playerLastHitTime = -999;
+
+// simple camera-attached HUD (health bar + ammo readout) so it's visible in and out of VR
+const hudCanvas = document.createElement('canvas');
+hudCanvas.width = 256; hudCanvas.height = 72;
+const hudCtx = hudCanvas.getContext('2d');
+const hudTexture = new THREE.CanvasTexture(hudCanvas);
+function drawHud() {
+  hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+  hudCtx.fillStyle = 'rgba(0,0,0,0.55)';
+  hudCtx.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+  const pct = Math.max(0, playerHealth) / PLAYER_MAX_HEALTH;
+  hudCtx.fillStyle = pct > 0.5 ? '#2ecc40' : pct > 0.25 ? '#ffaa00' : '#ff3b30';
+  hudCtx.fillRect(6, 6, (hudCanvas.width - 12) * pct, 20);
+  hudCtx.strokeStyle = '#fff';
+  hudCtx.strokeRect(6, 6, hudCanvas.width - 12, 20);
+  hudCtx.fillStyle = '#fff';
+  hudCtx.font = 'bold 16px sans-serif';
+  hudCtx.textAlign = 'center';
+  hudCtx.fillText(`HP ${Math.max(0, Math.round(playerHealth))} / ${PLAYER_MAX_HEALTH}`, hudCanvas.width / 2, 21);
+
+  // ammo line: belt count, plus the loaded/capacity of any currently-held gun(s)
+  let ammoLine = `Ammo Belt: ${ammoBeltCount}`;
+  const heldGuns = controllers
+    .map(c => c.userData.heldWeapon && c.userData.heldWeapon.weapon)
+    .filter(w => w && ammoCapacityFor(w.kind));
+  if (heldGuns.length > 0) {
+    const g = heldGuns[0];
+    ammoLine += `   ${g.kind}: ${g.ammoLoaded}/${ammoCapacityFor(g.kind)}`;
+  }
+  hudCtx.font = '15px sans-serif';
+  hudCtx.fillText(ammoLine, hudCanvas.width / 2, 44);
+  hudTexture.needsUpdate = true;
+}
+drawHud();
+const hudSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: hudTexture, transparent: true, depthTest: false, depthWrite: false }));
+hudSprite.scale.set(0.28, 0.079, 1);
+hudSprite.position.set(0, 0.16, -0.4);
+hudSprite.renderOrder = 999;
+camera.add(hudSprite);
+
+function damagePlayer(amount) {
+  if (simTime - playerLastHitTime < PLAYER_HIT_IMMUNITY) return;
+  playerLastHitTime = simTime;
+  playerHealth = Math.max(0, playerHealth - amount);
+  drawHud();
+  if (playerHealth <= 0) respawnPlayer();
+}
+
+function respawnPlayer() {
+  playerHealth = PLAYER_MAX_HEALTH;
+  drawHud();
+  rig.position.set(0, 0, 3);
+  rig.position.y = getGroundHeight(rig.position.x, rig.position.z);
+}
+
+// ================================================================
+// Creatures: goblins (ranged) and skeletons (melee), plus a wave system
+// ================================================================
+const CUBES_TO_METERS = CUBE_SIZE; // "N cubes away" is interpreted as N * CUBE_SIZE meters
+const GOBLIN_HP = 20;
+const GOBLIN_KEEP_DIST = 25 * CUBES_TO_METERS; // ~5m
+const GOBLIN_SHOOT_INTERVAL = 10;
+const GOBLIN_SPEED = MOVE_SPEED * 0.65;
+const GOBLIN_ARROW_SPEED = BULLET_SPEED_RIFLE;
+const GOBLIN_ARROW_DAMAGE_MULT = 1.2;
+
+const SKELETON_HP = 50;
+const SKELETON_KEEP_DIST = 2 * CUBES_TO_METERS; // ~0.4m
+const SKELETON_ATTACK_INTERVAL = 2;
+const SKELETON_SPEED = MOVE_SPEED * 0.9;
+const SKELETON_MELEE_DAMAGE = 9;
+const SKELETON_MELEE_RANGE = 0.75;
+
+// Knight: big, slow, hard-hitting melee brute. Only up to 3 knights may actively close in on
+// the player at once (checked in updateCreatures); any extras hold back at KNIGHT_HOLD_DIST.
+const KNIGHT_HP = 150;
+const KNIGHT_SPEED = MOVE_SPEED * 0.4; // 40% of player speed
+const KNIGHT_MELEE_DAMAGE = 32;
+const KNIGHT_ATTACK_INTERVAL = 3.4; // attacks slower than a skeleton
+const KNIGHT_MELEE_RANGE = 1.0;
+const KNIGHT_HOLD_DIST = 20 * CUBES_TO_METERS; // ~4m — where non-engaging knights wait
+const KNIGHT_MAX_ENGAGED = 3;
+
+// Hitman: ranged, keeps far away, fires slow homing shots.
+const HITMAN_HP = 500;
+const HITMAN_SPEED = MOVE_SPEED * 0.7; // 70% of player speed
+const HITMAN_SHOOT_INTERVAL = 20;
+const HITMAN_KEEP_DIST = 40 * CUBES_TO_METERS; // ~8m — stays this far away
+const HITMAN_BULLET_SPEED = MOVE_SPEED * 0.6; // 60% of player speed... see note at spawnHitmanBullet
+const HITMAN_BULLET_DAMAGE = 14;
+const HITMAN_BULLET_LIFETIME = 10;
+
+const creatures = [];
+
+function buildGoblinMesh() {
+  const group = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: 0x4c8c3a, roughness: 0.8 });
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.85 });
+  const bow = new THREE.MeshStandardMaterial({ color: 0x3c2a1a, roughness: 0.7 });
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.28, 4, 8), cloth);
+  torso.position.y = 0.62;
+  group.add(torso);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), skin);
+  head.position.y = 0.92;
+  group.add(head);
+
+  const earGeo = new THREE.ConeGeometry(0.025, 0.08, 6);
+  const earL = new THREE.Mesh(earGeo, skin);
+  earL.position.set(-0.1, 0.94, 0);
+  earL.rotation.z = 0.9;
+  group.add(earL);
+  const earR = new THREE.Mesh(earGeo, skin);
+  earR.position.set(0.1, 0.94, 0);
+  earR.rotation.z = -0.9;
+  group.add(earR);
+
+  const armGeo = new THREE.CapsuleGeometry(0.04, 0.24, 4, 6);
+  const armL = new THREE.Mesh(armGeo, skin);
+  armL.position.set(-0.16, 0.62, 0);
+  group.add(armL);
+  const armR = new THREE.Mesh(armGeo, skin);
+  armR.position.set(0.16, 0.62, 0);
+  group.add(armR);
+
+  const legGeo = new THREE.CapsuleGeometry(0.045, 0.26, 4, 6);
+  const legL = new THREE.Mesh(legGeo, cloth);
+  legL.position.set(-0.07, 0.25, 0);
+  group.add(legL);
+  const legR = new THREE.Mesh(legGeo, cloth);
+  legR.position.set(0.07, 0.25, 0);
+  group.add(legR);
+
+  const bowMesh = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.012, 6, 10, Math.PI * 1.4), bow);
+  bowMesh.position.set(0.19, 0.62, 0);
+  bowMesh.rotation.y = Math.PI / 2;
+  group.add(bowMesh);
+
+  return { group, armL, armR, legL, legR, head };
+}
+
+function buildSkeletonMesh() {
+  const group = new THREE.Group();
+  const bone = new THREE.MeshStandardMaterial({ color: 0xe6e0d0, roughness: 0.7 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.6, metalness: 0.4 });
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.34, 4, 8), bone);
+  torso.position.y = 0.75;
+  group.add(torso);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), bone);
+  head.position.y = 1.12;
+  group.add(head);
+
+  const armGeo = new THREE.CapsuleGeometry(0.045, 0.3, 4, 6);
+  const armL = new THREE.Mesh(armGeo, bone);
+  armL.position.set(-0.19, 0.75, 0);
+  group.add(armL);
+  const armR = new THREE.Mesh(armGeo, bone);
+  armR.position.set(0.19, 0.75, 0);
+  group.add(armR);
+
+  const legGeo = new THREE.CapsuleGeometry(0.05, 0.3, 4, 6);
+  const legL = new THREE.Mesh(legGeo, bone);
+  legL.position.set(-0.08, 0.3, 0);
+  group.add(legL);
+  const legR = new THREE.Mesh(legGeo, bone);
+  legR.position.set(0.08, 0.3, 0);
+  group.add(legR);
+
+  // Sword is a child of the right arm (armR), matching the arm that the attack animation actually
+  // swings (creature.parts.armR.rotation.x in updateCreatures) — it used to be positioned on the
+  // left side while the right arm animated, so the blade both looked wrong-sided and never moved
+  // with the swing. As a child of armR, the local offset is relative to the arm's own origin.
+  const swordBlade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.008, 0.32), dark);
+  swordBlade.position.set(0, -0.05, -0.22);
+  armR.add(swordBlade);
+
+  return { group, armL, armR, legL, legR, head, swordBlade };
+}
+
+// Knight: heavily armored melee brute with a big two-handed sword. Bigger than the skeleton in
+// every dimension so it visibly reads as a bigger, tougher threat.
+function buildKnightMesh() {
+  const group = new THREE.Group();
+  const armor = new THREE.MeshStandardMaterial({ color: 0x7a828c, roughness: 0.35, metalness: 0.85 });
+  const armorDark = new THREE.MeshStandardMaterial({ color: 0x454b52, roughness: 0.4, metalness: 0.8 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0xb08a2e, roughness: 0.4, metalness: 0.6 });
+  const blade = new THREE.MeshStandardMaterial({ color: 0xd8dde2, roughness: 0.25, metalness: 0.9 });
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.42, 4, 8), armor);
+  torso.position.y = 0.95;
+  group.add(torso);
+
+  const chestTrim = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.24), trim);
+  chestTrim.position.y = 1.12;
+  group.add(chestTrim);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), armorDark);
+  head.position.y = 1.48;
+  group.add(head);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.04), armorDark);
+  visor.position.set(0, 1.46, 0.14);
+  group.add(visor);
+
+  const armGeo = new THREE.CapsuleGeometry(0.075, 0.4, 4, 6);
+  const armL = new THREE.Mesh(armGeo, armor);
+  armL.position.set(-0.28, 0.95, 0);
+  group.add(armL);
+  const armR = new THREE.Mesh(armGeo, armor);
+  armR.position.set(0.28, 0.95, 0);
+  group.add(armR);
+
+  const legGeo = new THREE.CapsuleGeometry(0.09, 0.42, 4, 6);
+  const legL = new THREE.Mesh(legGeo, armorDark);
+  legL.position.set(-0.12, 0.4, 0);
+  group.add(legL);
+  const legR = new THREE.Mesh(legGeo, armorDark);
+  legR.position.set(0.12, 0.4, 0);
+  group.add(legR);
+
+  // big two-handed greatsword, parented to the right arm so it swings with the attack animation
+  const swordGroup = new THREE.Group();
+  const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 8), armorDark);
+  hilt.position.set(0, -0.08, 0);
+  swordGroup.add(hilt);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.03, 0.04), trim);
+  guard.position.set(0, 0, 0);
+  swordGroup.add(guard);
+  const greatBlade = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.015, 0.65), blade);
+  greatBlade.position.set(0, 0.01, -0.36);
+  swordGroup.add(greatBlade);
+  swordGroup.position.set(0, -0.15, -0.15);
+  swordGroup.rotation.x = -0.3;
+  armR.add(swordGroup);
+
+  return { group, armL, armR, legL, legR, head, swordGroup };
+}
+
+// Hitman: suited ranged attacker with a pistol, fires slow homing shots and keeps its distance.
+function buildHitmanMesh() {
+  const group = new THREE.Group();
+  const suit = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.55, metalness: 0.2 });
+  const shirt = new THREE.MeshStandardMaterial({ color: 0xe8e6e0, roughness: 0.6 });
+  const tie = new THREE.MeshStandardMaterial({ color: 0x7a1f1f, roughness: 0.5 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xd8ab84, roughness: 0.7 });
+  const gunMat = new THREE.MeshStandardMaterial({ color: 0x2b2b31, roughness: 0.35, metalness: 0.85 });
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.32, 4, 8), suit);
+  torso.position.y = 0.78;
+  group.add(torso);
+
+  const shirtStripe = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.02), shirt);
+  shirtStripe.position.set(0, 0.8, 0.15);
+  group.add(shirtStripe);
+  const tieMesh = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.26, 0.015), tie);
+  tieMesh.position.set(0, 0.78, 0.165);
+  group.add(tieMesh);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), skin);
+  head.position.y = 1.17;
+  group.add(head);
+
+  const armGeo = new THREE.CapsuleGeometry(0.05, 0.3, 4, 6);
+  const armL = new THREE.Mesh(armGeo, suit);
+  armL.position.set(-0.2, 0.78, 0);
+  group.add(armL);
+  const armR = new THREE.Mesh(armGeo, suit);
+  armR.position.set(0.2, 0.78, 0);
+  group.add(armR);
+
+  const legGeo = new THREE.CapsuleGeometry(0.06, 0.32, 4, 6);
+  const legL = new THREE.Mesh(legGeo, suit);
+  legL.position.set(-0.08, 0.32, 0);
+  group.add(legL);
+  const legR = new THREE.Mesh(legGeo, suit);
+  legR.position.set(0.08, 0.32, 0);
+  group.add(legR);
+
+  // small pistol held in the right hand
+  const pistolGroup = new THREE.Group();
+  const pistolBody = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.05, 0.14), gunMat);
+  pistolBody.position.set(0, 0, -0.03);
+  pistolGroup.add(pistolBody);
+  const pistolGrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 0.03), gunMat);
+  pistolGrip.position.set(0, -0.06, 0.03);
+  pistolGroup.add(pistolGrip);
+  pistolGroup.position.set(0, -0.08, -0.12);
+  armR.add(pistolGroup);
+
+  return { group, armL, armR, legL, legR, head, pistolGroup };
+}
+
+function randomMapPosition() {
+  const margin = 6;
+  const half = PLATFORM_SIZE / 2 - margin;
+  // avoid spawning too close to the player's starting/current position
+  let x, z;
+  let tries = 0;
+  do {
+    x = (Math.random() * 2 - 1) * half;
+    z = (Math.random() * 2 - 1) * half;
+    tries++;
+  } while (tries < 12 && Math.hypot(x - rig.position.x, z - rig.position.z) < 6);
+  return { x, z };
+}
+
+function spawnCreature(kind, difficultyMult) {
+  difficultyMult = difficultyMult || 1;
+  const { x, z } = randomMapPosition();
+  const isGoblin = kind === 'goblin';
+  const isKnight = kind === 'knight';
+  const isHitman = kind === 'hitman';
+  const parts = isGoblin ? buildGoblinMesh() : isKnight ? buildKnightMesh() : isHitman ? buildHitmanMesh() : buildSkeletonMesh();
+  // spawn at actual ground level below (currentY = 0), not Infinity, so creatures don't snap to
+  // the top of the ramp just because their x/z happens to fall within its footprint
+  const groundY = getGroundHeight(x, z, 0);
+  parts.group.position.set(x, groundY, z);
+  scene.add(parts.group);
+
+  const radius = isGoblin ? 0.22 : isKnight ? 0.28 : isHitman ? 0.24 : 0.24;
+  const body = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: groundPhysMaterial });
+  body.addShape(new CANNON.Sphere(radius), new CANNON.Vec3(0, isGoblin ? 0.62 : isKnight ? 0.8 : isHitman ? 0.75 : 0.75, 0));
+  body.position.set(x, groundY, z);
+  world.addBody(body);
+
+  const baseHp = isGoblin ? GOBLIN_HP : isKnight ? KNIGHT_HP : isHitman ? HITMAN_HP : SKELETON_HP;
+  const baseAttackInterval = isGoblin ? GOBLIN_SHOOT_INTERVAL : isKnight ? KNIGHT_ATTACK_INTERVAL : isHitman ? HITMAN_SHOOT_INTERVAL : SKELETON_ATTACK_INTERVAL;
+
+  const creature = {
+    kind,
+    parts,
+    body,
+    hp: baseHp * (1 + (difficultyMult - 1) * 0.5),
+    maxHp: baseHp,
+    dead: false,
+    lastHitTime: -999,
+    attackTimer: baseAttackInterval * (0.3 + Math.random() * 0.7),
+    animPhase: Math.random() * 10,
+    hitRadius: radius,
+    difficultyMult
+  };
+  creatures.push(creature);
+
+  body.addEventListener('collide', (evt) => {
+    if (creature.dead) return;
+    const contact = evt.contact;
+    if (!contact) return;
+    const relVel = Math.abs(contact.getImpactVelocityAlongNormal ? contact.getImpactVelocityAlongNormal() : 0);
+    if (relVel < 0.4) return;
+    damageCreature(creature, relVel * 1.2, 1);
+  });
+
+  return creature;
+}
+
+function damageCreature(creature, amount, multiplier) {
+  if (creature.dead) return;
+  if (simTime - creature.lastHitTime < 0.12) return;
+  creature.lastHitTime = simTime;
+  creature.hp -= amount * (multiplier || 1);
+  const popupPos = new THREE.Vector3();
+  creature.parts.group.getWorldPosition(popupPos);
+  popupPos.y += 0.9;
+  spawnDamagePopup(popupPos, amount * (multiplier || 1));
+  if (creature.hp <= 0) killCreature(creature);
+}
+
+function killCreature(creature) {
+  creature.dead = true;
+  scene.remove(creature.parts.group);
+  world.removeBody(creature.body);
+  const idx = creatures.indexOf(creature);
+  if (idx !== -1) creatures.splice(idx, 1);
+  onCreatureDefeated();
+}
+
+// goblin arrows: real physics-based projectiles (cannon-es bodies), same pattern as bullets,
+// so they're affected by the world like anything else and can be reliably tested against the
+// player's whole body rather than just a tiny head-only radius aimed near the floor.
+const goblinArrows = []; // { mesh, body, spawnTime }
+const arrowPhysMaterial = new CANNON.Material('arrow');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, arrowPhysMaterial, { friction: 0.3, restitution: 0.1 }));
+
+function spawnGoblinArrow(originPos, direction) {
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6),
+    new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.7 })
+  );
+  mesh.rotation.x = Math.PI / 2;
+  mesh.position.copy(originPos);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: 0.05,
+    material: arrowPhysMaterial,
+    shape: new CANNON.Cylinder(0.012, 0.012, 0.22, 6),
+    linearDamping: 0.01,
+    angularDamping: 0.2
+  });
+  body.position.set(originPos.x, originPos.y, originPos.z);
+  const vel = direction.clone().normalize().multiplyScalar(GOBLIN_ARROW_SPEED);
+  body.velocity.set(vel.x, vel.y, vel.z);
+  // orient the physics body to match the initial flight direction too, so it looks right
+  // even for the first frame before any collision response reorients it
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.clone().normalize());
+  body.quaternion.set(q.x, q.y, q.z, q.w);
+  world.addBody(body);
+
+  goblinArrows.push({ mesh, body, spawnTime: simTime, prevPos: originPos.clone() });
+}
+
+function updateGoblinArrows(delta) {
+  const playerPos = new THREE.Vector3();
+  camera.getWorldPosition(playerPos);
+  const feetY = playerPos.y - 1.0; // playerPos is head height; approximate feet from there
+
+  for (let i = goblinArrows.length - 1; i >= 0; i--) {
+    const a = goblinArrows[i];
+    a.mesh.position.set(a.body.position.x, a.body.position.y, a.body.position.z);
+    // orient the mesh to face along its current velocity so it visibly arcs/tumbles with physics
+    const vel = new THREE.Vector3(a.body.velocity.x, a.body.velocity.y, a.body.velocity.z);
+    if (vel.lengthSq() > 0.0001) {
+      a.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), vel.clone().normalize());
+    }
+
+    // Swept hit test against the player's whole body (feet to head): check several points along
+    // the segment from the arrow's previous position to its current one, not just the current
+    // frame's position — a fast arrow (this one travels at rifle bullet speed) can otherwise
+    // tunnel past the player's hit column between two frames and never register as a hit.
+    let hit = false;
+    const steps = 4;
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const px = THREE.MathUtils.lerp(a.prevPos.x, a.mesh.position.x, t);
+      const pz = THREE.MathUtils.lerp(a.prevPos.z, a.mesh.position.z, t);
+      const py = THREE.MathUtils.lerp(a.prevPos.y, a.mesh.position.y, t);
+      const dx = px - playerPos.x;
+      const dz = pz - playerPos.z;
+      const horizDist = Math.sqrt(dx * dx + dz * dz);
+      const dy = py - feetY;
+      if (horizDist < 0.45 && dy > -0.2 && dy < 1.7) { hit = true; break; }
+    }
+
+    if (hit) {
+      damagePlayer(vel.length() * GOBLIN_ARROW_DAMAGE_MULT * 0.15);
+      scene.remove(a.mesh);
+      world.removeBody(a.body);
+      goblinArrows.splice(i, 1);
+      continue;
+    }
+
+    a.prevPos.copy(a.mesh.position);
+
+    if (simTime - a.spawnTime > 5) {
+      scene.remove(a.mesh);
+      world.removeBody(a.body);
+      goblinArrows.splice(i, 1);
+    }
+  }
+}
+
+// --- Hitman homing bullets: physics-based projectiles (like goblin arrows) that continuously
+// steer toward the player's current position while in flight, at a fixed 60%-of-player-move-speed
+// velocity, and expire after 10 seconds if they don't connect.
+const hitmanBullets = []; // { mesh, body, spawnTime, prevPos }
+const hitmanBulletPhysMaterial = new CANNON.Material('hitmanBullet');
+world.addContactMaterial(new CANNON.ContactMaterial(groundPhysMaterial, hitmanBulletPhysMaterial, { friction: 0.3, restitution: 0.1 }));
+
+function spawnHitmanBullet(originPos, direction) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.03, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xff3b30, emissive: 0x8a0f0a, emissiveIntensity: 0.7, roughness: 0.3 })
+  );
+  mesh.position.copy(originPos);
+  scene.add(mesh);
+
+  const body = new CANNON.Body({
+    mass: 0.03,
+    material: hitmanBulletPhysMaterial,
+    shape: new CANNON.Sphere(0.03),
+    linearDamping: 0,
+    angularDamping: 0.1
+  });
+  body.position.set(originPos.x, originPos.y, originPos.z);
+  const vel = direction.clone().normalize().multiplyScalar(HITMAN_BULLET_SPEED);
+  body.velocity.set(vel.x, vel.y, vel.z);
+  world.addBody(body);
+
+  hitmanBullets.push({ mesh, body, spawnTime: simTime, prevPos: originPos.clone() });
+}
+
+const HITMAN_HOMING_TURN_RATE = 1.4; // radians/sec the bullet can steer toward the player
+
+function updateHitmanBullets(delta) {
+  const playerPos = new THREE.Vector3();
+  camera.getWorldPosition(playerPos);
+  const feetY = playerPos.y - 1.0;
+
+  for (let i = hitmanBullets.length - 1; i >= 0; i--) {
+    const b = hitmanBullets[i];
+
+    // homing: steer current velocity direction toward the player at a limited turn rate, then
+    // re-apply it at the fixed HITMAN_BULLET_SPEED magnitude so the bullet always travels at
+    // 60% player-move-speed but curves toward wherever the player currently is.
+    const curVel = new THREE.Vector3(b.body.velocity.x, b.body.velocity.y, b.body.velocity.z);
+    const curDir = curVel.lengthSq() > 0.0001 ? curVel.clone().normalize() : new THREE.Vector3(0, 0, -1);
+    const toPlayer = new THREE.Vector3(playerPos.x - b.body.position.x, playerPos.y - b.body.position.y, playerPos.z - b.body.position.z);
+    if (toPlayer.lengthSq() > 0.0001) {
+      const desiredDir = toPlayer.normalize();
+      const maxTurn = HITMAN_HOMING_TURN_RATE * delta;
+      const angleBetween = curDir.angleTo(desiredDir);
+      const newDir = angleBetween <= maxTurn
+        ? desiredDir
+        : curDir.clone().lerp(desiredDir, Math.min(1, maxTurn / Math.max(angleBetween, 0.0001))).normalize();
+      const newVel = newDir.multiplyScalar(HITMAN_BULLET_SPEED);
+      b.body.velocity.set(newVel.x, newVel.y, newVel.z);
+    }
+
+    b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z);
+
+    // swept hit test against the player's whole body, same pattern as goblin arrows
+    let hit = false;
+    const steps = 4;
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const px = THREE.MathUtils.lerp(b.prevPos.x, b.mesh.position.x, t);
+      const pz = THREE.MathUtils.lerp(b.prevPos.z, b.mesh.position.z, t);
+      const py = THREE.MathUtils.lerp(b.prevPos.y, b.mesh.position.y, t);
+      const dx = px - playerPos.x;
+      const dz = pz - playerPos.z;
+      const horizDist = Math.sqrt(dx * dx + dz * dz);
+      const dy = py - feetY;
+      if (horizDist < 0.45 && dy > -0.2 && dy < 1.7) { hit = true; break; }
+    }
+
+    if (hit) {
+      damagePlayer(HITMAN_BULLET_DAMAGE);
+      scene.remove(b.mesh);
+      world.removeBody(b.body);
+      hitmanBullets.splice(i, 1);
+      continue;
+    }
+
+    b.prevPos.copy(b.mesh.position);
+
+    if (simTime - b.spawnTime > HITMAN_BULLET_LIFETIME) {
+      scene.remove(b.mesh);
+      world.removeBody(b.body);
+      hitmanBullets.splice(i, 1);
+    }
+  }
+}
+
+// --- Wave system ---
+// Requested 10-wave progression: { skeleton, goblin, knight, hitman }. Wave 0 is unused (waves
+// are 1-indexed to match how they're referred to in the settings HUD).
+const WAVE_DEFS = [
+  null,
+  { skeleton: 1, goblin: 0, knight: 0, hitman: 0 },   // 1
+  { skeleton: 0, goblin: 1, knight: 0, hitman: 0 },   // 2
+  { skeleton: 2, goblin: 0, knight: 0, hitman: 0 },   // 3
+  { skeleton: 2, goblin: 1, knight: 0, hitman: 0 },   // 4
+  { skeleton: 1, goblin: 3, knight: 0, hitman: 0 },   // 5
+  { skeleton: 5, goblin: 2, knight: 1, hitman: 0 },   // 6
+  { skeleton: 7, goblin: 3, knight: 0, hitman: 0 },   // 7
+  { skeleton: 0, goblin: 5, knight: 2, hitman: 0 },   // 8
+  { skeleton: 10, goblin: 0, knight: 4, hitman: 0 },  // 9
+  { skeleton: 5, goblin: 7, knight: 2, hitman: 1 }    // 10
+];
+const LAST_DEFINED_WAVE = WAVE_DEFS.length - 1;
+let currentWave = 0;
+let waveActive = false;
+let endlessBatch = 0;
+let waveClearTimer = 0;
+
+function startWaves() {
+  clearAllCreatures();
+  gameSettings.wavesEnabled = true;
+  waveActive = true;
+  currentWave = 1;
+  endlessBatch = 0;
+  spawnWaveNumber(1);
+}
+
+function stopWaves() {
+  gameSettings.wavesEnabled = false;
+  waveActive = false;
+  clearAllCreatures();
+}
+
+function clearAllCreatures() {
+  for (const c of [...creatures]) killCreatureSilent(c);
+  for (const a of [...goblinArrows]) { scene.remove(a.mesh); world.removeBody(a.body); }
+  goblinArrows.length = 0;
+  for (const b of [...hitmanBullets]) { scene.remove(b.mesh); world.removeBody(b.body); }
+  hitmanBullets.length = 0;
+}
+function killCreatureSilent(creature) {
+  creature.dead = true;
+  scene.remove(creature.parts.group);
+  world.removeBody(creature.body);
+  const idx = creatures.indexOf(creature);
+  if (idx !== -1) creatures.splice(idx, 1);
+}
+
+function spawnWaveNumber(n) {
+  const def = WAVE_DEFS[n];
+  for (let i = 0; i < def.skeleton; i++) spawnCreature('skeleton', 1);
+  for (let i = 0; i < def.goblin; i++) spawnCreature('goblin', 1);
+  for (let i = 0; i < def.knight; i++) spawnCreature('knight', 1);
+  for (let i = 0; i < def.hitman; i++) spawnCreature('hitman', 1);
+}
+
+// Endless mode (after wave 10): slowly escalates the counts of all four creature types and their
+// difficulty multiplier with every batch, rather than just goblins/skeletons.
+function spawnEndlessBatch() {
+  endlessBatch++;
+  const difficultyMult = 1 + endlessBatch * 0.12;
+  const skeletonCount = 4 + Math.floor(endlessBatch * 0.8);
+  const goblinCount = 3 + Math.floor(endlessBatch * 0.6);
+  const knightCount = 1 + Math.floor(endlessBatch / 2);
+  const hitmanCount = Math.floor(endlessBatch / 3); // starts appearing every 3rd endless batch
+  for (let i = 0; i < skeletonCount; i++) spawnCreature('skeleton', difficultyMult);
+  for (let i = 0; i < goblinCount; i++) spawnCreature('goblin', difficultyMult);
+  for (let i = 0; i < knightCount; i++) spawnCreature('knight', difficultyMult);
+  for (let i = 0; i < hitmanCount; i++) spawnCreature('hitman', difficultyMult);
+}
+
+function onCreatureDefeated() {
+  if (!waveActive) return;
+  if (creatures.length > 0) return; // wave not cleared yet
+  waveClearTimer = 2.5; // small delay before the next wave, set in updateWaves
+}
+
+function updateWaves(delta) {
+  if (!waveActive) return;
+  if (creatures.length === 0) {
+    if (waveClearTimer > 0) {
+      waveClearTimer -= delta;
+      if (waveClearTimer <= 0) {
+        if (currentWave < LAST_DEFINED_WAVE) {
+          currentWave++;
+          spawnWaveNumber(currentWave);
+        } else {
+          currentWave = LAST_DEFINED_WAVE + 1; // endless mode
+          spawnEndlessBatch();
+        }
+      }
+    } else if (currentWave === 0) {
+      // safety: shouldn't happen, but avoid a stuck state
+      waveClearTimer = 0.1;
+    }
+  }
+}
+
+// --- Creature AI + simple animation, called once per frame ---
+function updateCreatures(delta) {
+  const playerPos = new THREE.Vector3();
+  camera.getWorldPosition(playerPos);
+  playerPos.y = 0;
+
+  // Knight engagement cap: only KNIGHT_MAX_ENGAGED knights may actively close in on the player
+  // at once; the rest hold back at KNIGHT_HOLD_DIST. Pick the nearest N knights to engage each
+  // frame so it's always the closest ones pressing the attack.
+  const knightsByDist = creatures
+    .filter(c => !c.dead && c.kind === 'knight')
+    .map(c => ({ c, d: c.parts.group.position.distanceTo(new THREE.Vector3(playerPos.x, c.parts.group.position.y, playerPos.z)) }))
+    .sort((a, b) => a.d - b.d);
+  const engagedKnights = new Set(knightsByDist.slice(0, KNIGHT_MAX_ENGAGED).map(e => e.c));
+
+  for (const creature of creatures) {
+    if (creature.dead) continue;
+    const g = creature.parts.group;
+    const toPlayer = new THREE.Vector3(playerPos.x - g.position.x, 0, playerPos.z - g.position.z);
+    const dist = toPlayer.length();
+    const isGoblin = creature.kind === 'goblin';
+    const isKnight = creature.kind === 'knight';
+    const isHitman = creature.kind === 'hitman';
+    const isSkeleton = !isGoblin && !isKnight && !isHitman;
+
+    const keepDist = isGoblin ? GOBLIN_KEEP_DIST : isHitman ? HITMAN_KEEP_DIST : isKnight ? KNIGHT_HOLD_DIST : SKELETON_KEEP_DIST;
+    const speed = isGoblin ? GOBLIN_SPEED : isKnight ? KNIGHT_SPEED : isHitman ? HITMAN_SPEED : SKELETON_SPEED;
+
+    let moving = false;
+    let desiredMove = null; // THREE.Vector3, set below per-kind, applied after separation blending
+    if (dist > 0.001) {
+      const dir = toPlayer.clone().normalize();
+
+      if (isGoblin || isHitman) {
+        // ranged kiting: move away if too close, closer if too far, otherwise hold at range
+        if (dist < keepDist - 0.5) {
+          desiredMove = dir.clone().multiplyScalar(-speed);
+          moving = true;
+        } else if (dist > keepDist + 0.5) {
+          desiredMove = dir.clone().multiplyScalar(speed);
+          moving = true;
+        }
+      } else if (isKnight) {
+        if (engagedKnights.has(creature)) {
+          // engaged: close in and attack like a normal melee unit
+          if (dist > KNIGHT_MELEE_RANGE * 0.8) {
+            desiredMove = dir.clone().multiplyScalar(speed);
+            moving = true;
+          }
+        } else {
+          // not engaged: hold back at KNIGHT_HOLD_DIST rather than piling onto the player
+          if (dist < keepDist - 1.0) {
+            desiredMove = dir.clone().multiplyScalar(-speed);
+            moving = true;
+          } else if (dist > keepDist + 1.0) {
+            desiredMove = dir.clone().multiplyScalar(speed);
+            moving = true;
+          }
+        }
+      } else {
+        // skeleton: straightforward melee approach
+        if (dist > SKELETON_MELEE_RANGE * 0.8) {
+          desiredMove = dir.clone().multiplyScalar(speed);
+          moving = true;
+        }
+      }
+      // face the player
+      const targetAngle = Math.atan2(dir.x, dir.z);
+      g.rotation.y = targetAngle;
+    }
+
+    // Separation: nudge away from any other nearby creature so groups spread out instead of
+    // clumping into a single stacked mass. Cheap O(n^2) pairwise check is fine at this creature
+    // count (waves top out in the tens, not hundreds).
+    const sepRadius = (creature.hitRadius || 0.25) * 3.2;
+    const separation = new THREE.Vector3();
+    for (const other of creatures) {
+      if (other === creature || other.dead) continue;
+      const og = other.parts.group;
+      const dx = g.position.x - og.position.x;
+      const dz = g.position.z - og.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > 0.0001 && d2 < sepRadius * sepRadius) {
+        const d = Math.sqrt(d2);
+        const push = (sepRadius - d) / sepRadius;
+        separation.x += (dx / d) * push;
+        separation.z += (dz / d) * push;
+      }
+    }
+    if (separation.lengthSq() > 0.0001) {
+      separation.multiplyScalar(speed * 0.8);
+      if (desiredMove) desiredMove.add(separation); else desiredMove = separation;
+      moving = true;
+    }
+
+    if (desiredMove) g.position.addScaledVector(desiredMove, delta);
+
+    // pass the creature's own current height as currentY so getGroundHeight can tell whether
+    // it's standing on a surface vs. underneath an overhang, instead of defaulting to Infinity
+    // (which always snapped creatures to the top of the ramp/platform, causing them to appear
+    // to "teleport" onto the slope whenever their path crossed its footprint)
+    g.position.y = getGroundHeight(g.position.x, g.position.z, g.position.y);
+    creature.body.position.set(g.position.x, g.position.y + creature.hitRadius, g.position.z);
+
+    // simple animation: idle bob always; walk-swing when moving; attack pose on cooldown trigger
+    creature.animPhase += delta * (moving ? (isKnight ? 4 : 6) : 2);
+    const bob = Math.sin(creature.animPhase) * (moving ? 0.05 : 0.015);
+    g.position.y += Math.abs(bob) * 0.3;
+    if (moving) {
+      creature.parts.legL.rotation.x = Math.sin(creature.animPhase) * 0.5;
+      creature.parts.legR.rotation.x = -Math.sin(creature.animPhase) * 0.5;
+      creature.parts.armL.rotation.x = -Math.sin(creature.animPhase) * 0.35;
+      if (!creature.attackAnim) creature.parts.armR.rotation.x = Math.sin(creature.animPhase) * 0.35;
+    } else {
+      creature.parts.legL.rotation.x = THREE.MathUtils.lerp(creature.parts.legL.rotation.x, 0, 0.1);
+      creature.parts.legR.rotation.x = THREE.MathUtils.lerp(creature.parts.legR.rotation.x, 0, 0.1);
+      creature.parts.armL.rotation.x = THREE.MathUtils.lerp(creature.parts.armL.rotation.x, 0, 0.1);
+    }
+
+    // attack timers
+    creature.attackTimer -= delta;
+    if (creature.attackAnim) {
+      creature.attackAnim -= delta;
+      const t = Math.max(0, creature.attackAnim);
+      if (isGoblin) {
+        creature.parts.armR.rotation.x = THREE.MathUtils.lerp(0, -1.1, Math.sin((0.35 - t) / 0.35 * Math.PI));
+      } else if (isKnight) {
+        creature.parts.armR.rotation.x = THREE.MathUtils.lerp(0, -1.9, Math.sin((0.5 - t) / 0.5 * Math.PI));
+      } else if (isHitman) {
+        creature.parts.armR.rotation.x = THREE.MathUtils.lerp(0, -0.5, Math.sin((0.25 - t) / 0.25 * Math.PI));
+      } else {
+        creature.parts.armR.rotation.x = THREE.MathUtils.lerp(0, -1.6, Math.sin((0.3 - t) / 0.3 * Math.PI));
+      }
+      if (creature.attackAnim <= 0) creature.attackAnim = 0;
+    }
+
+    if (creature.attackTimer <= 0) {
+      if (isGoblin) {
+        creature.attackTimer = GOBLIN_SHOOT_INTERVAL;
+        creature.attackAnim = 0.35;
+        const originPos = new THREE.Vector3();
+        g.getWorldPosition(originPos);
+        originPos.y += 0.62;
+        const headTarget = new THREE.Vector3();
+        camera.getWorldPosition(headTarget);
+        const dir = headTarget.clone().sub(originPos).normalize();
+        spawnGoblinArrow(originPos, dir);
+      } else if (isHitman) {
+        creature.attackTimer = HITMAN_SHOOT_INTERVAL;
+        creature.attackAnim = 0.25;
+        const originPos = new THREE.Vector3();
+        g.getWorldPosition(originPos);
+        originPos.y += 0.85;
+        const headTarget = new THREE.Vector3();
+        camera.getWorldPosition(headTarget);
+        const dir = headTarget.clone().sub(originPos).normalize();
+        spawnHitmanBullet(originPos, dir);
+      } else if (isKnight) {
+        creature.attackTimer = KNIGHT_ATTACK_INTERVAL;
+        creature.attackAnim = 0.5;
+        if (engagedKnights.has(creature) && dist < KNIGHT_MELEE_RANGE) {
+          damagePlayer(KNIGHT_MELEE_DAMAGE * (0.85 + 0.3 * creature.difficultyMult));
+        }
+      } else {
+        creature.attackTimer = SKELETON_ATTACK_INTERVAL;
+        creature.attackAnim = 0.3;
+        if (dist < SKELETON_MELEE_RANGE) {
+          damagePlayer(SKELETON_MELEE_DAMAGE * (0.85 + 0.3 * creature.difficultyMult));
+        }
+      }
+    }
+  }
+}
+
+// ================================================================
+// Settings board: toggle cube/ball spawning, waves, teleport, and a teleport-cooldown slider
+// ================================================================
+const SETTINGS_BOARD_POS = new THREE.Vector3(-4.5, 0, 3.5);
+const settingsGroup = new THREE.Group();
+settingsGroup.position.copy(SETTINGS_BOARD_POS);
+scene.add(settingsGroup);
+
+const postMat = new THREE.MeshStandardMaterial({ color: 0x5c3d20, roughness: 0.85 });
+const postGeo = new THREE.BoxGeometry(0.06, 1.8, 0.06);
+for (const px of [-0.4, 0.4]) {
+  const post = new THREE.Mesh(postGeo, postMat);
+  post.position.set(px, 0.9, 0);
+  settingsGroup.add(post);
+}
+const boardBack = new THREE.Mesh(
+  new THREE.BoxGeometry(0.95, 1.35, 0.04),
+  new THREE.MeshStandardMaterial({ color: 0x333844, roughness: 0.7 })
+);
+boardBack.position.set(0, 1.1, 0.04);
+settingsGroup.add(boardBack);
+
+// static physics collision so the board isn't walk-through-able
+const settingsBoardBody = new CANNON.Body({ mass: 0, material: groundPhysMaterial });
+settingsBoardBody.addShape(new CANNON.Box(new CANNON.Vec3(0.475, 0.675, 0.02)), new CANNON.Vec3(0, 1.1, 0.04));
+settingsBoardBody.position.set(SETTINGS_BOARD_POS.x, SETTINGS_BOARD_POS.y, SETTINGS_BOARD_POS.z);
+world.addBody(settingsBoardBody);
+
+function makeSettingsButton(labelLines, y) {
+  const group = new THREE.Group();
+  group.position.set(0, y, 0.07);
+  settingsGroup.add(group);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.16, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.6 })
+  );
+  group.add(base);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 100;
+  const ctx = canvas.getContext('2d');
+  const texture = new THREE.CanvasTexture(canvas);
+  const labelMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.76, 0.14),
+    new THREE.MeshBasicMaterial({ map: texture })
+  );
+  labelMesh.position.z = 0.017;
+  group.add(labelMesh);
+
+  function redraw(lines, onColor) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = onColor ? '#1c5c2e' : '#3a2323';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText(lines[0], canvas.width / 2, 42);
+    ctx.font = '22px sans-serif';
+    ctx.fillText(lines[1], canvas.width / 2, 76);
+    texture.needsUpdate = true;
+  }
+
+  return { group, base, redraw };
+}
+
+const spawnToggleBtn = makeSettingsButton([], 1.62);
+const wavesToggleBtn = makeSettingsButton([], 1.42);
+const teleportToggleBtn = makeSettingsButton([], 1.22);
+
+function refreshSettingsLabels() {
+  spawnToggleBtn.redraw(['Spawn Cubes/Balls', gameSettings.spawningEnabled ? 'ON' : 'OFF'], gameSettings.spawningEnabled);
+  const waveStatus = gameSettings.wavesEnabled
+    ? (currentWave > LAST_DEFINED_WAVE ? `ON - Endless (batch ${endlessBatch})` : `ON - Wave ${currentWave}/${LAST_DEFINED_WAVE}`)
+    : 'OFF';
+  wavesToggleBtn.redraw(['Waves', waveStatus], gameSettings.wavesEnabled);
+  teleportToggleBtn.redraw(['Teleport', gameSettings.teleportEnabled ? 'ON' : 'OFF'], gameSettings.teleportEnabled);
+}
+refreshSettingsLabels();
+
+// --- teleport cooldown slider (touch-strip: touch a point along the track to set the value) ---
+const sliderY = 1.0;
+const sliderGroup = new THREE.Group();
+sliderGroup.position.set(0, sliderY, 0.07);
+settingsGroup.add(sliderGroup);
+
+const sliderTrackWidth = 0.7;
+const sliderTrack = new THREE.Mesh(
+  new THREE.BoxGeometry(sliderTrackWidth, 0.03, 0.02),
+  new THREE.MeshStandardMaterial({ color: 0x555c68, roughness: 0.6 })
+);
+sliderGroup.add(sliderTrack);
+
+const sliderHandle = new THREE.Mesh(
+  new THREE.SphereGeometry(0.035, 12, 10),
+  new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x006677, emissiveIntensity: 0.4 })
+);
+sliderHandle.position.set(0, 0.02, 0);
+sliderGroup.add(sliderHandle);
+
+const sliderLabelCanvas = document.createElement('canvas');
+sliderLabelCanvas.width = 512; sliderLabelCanvas.height = 70;
+const sliderLabelCtx = sliderLabelCanvas.getContext('2d');
+const sliderLabelTexture = new THREE.CanvasTexture(sliderLabelCanvas);
+const sliderLabelMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.76, 0.105),
+  new THREE.MeshBasicMaterial({ map: sliderLabelTexture })
+);
+sliderLabelMesh.position.set(0, 0.11, 0.001);
+sliderGroup.add(sliderLabelMesh);
+
+function redrawSliderLabel() {
+  sliderLabelCtx.clearRect(0, 0, sliderLabelCanvas.width, sliderLabelCanvas.height);
+  sliderLabelCtx.fillStyle = '#222';
+  sliderLabelCtx.fillRect(0, 0, sliderLabelCanvas.width, sliderLabelCanvas.height);
+  sliderLabelCtx.fillStyle = '#fff';
+  sliderLabelCtx.textAlign = 'center';
+  sliderLabelCtx.font = 'bold 26px sans-serif';
+  sliderLabelCtx.fillText(`Teleport Cooldown: ${gameSettings.teleportCooldown.toFixed(1)}s`, sliderLabelCanvas.width / 2, 44);
+  sliderLabelTexture.needsUpdate = true;
+}
+redrawSliderLabel();
+
+function updateSliderHandlePosition() {
+  const t = (gameSettings.teleportCooldown - TELEPORT_COOLDOWN_MIN) / (TELEPORT_COOLDOWN_MAX - TELEPORT_COOLDOWN_MIN);
+  sliderHandle.position.x = THREE.MathUtils.lerp(-sliderTrackWidth / 2, sliderTrackWidth / 2, THREE.MathUtils.clamp(t, 0, 1));
+}
+updateSliderHandlePosition();
+
+let settingsButtonCooldown = 0;
+const settingsLocalPos = new THREE.Vector3();
+
+function updateSettingsBoard(controllerWorldPositions, delta) {
+  if (settingsButtonCooldown > 0) settingsButtonCooldown = Math.max(0, settingsButtonCooldown - delta);
+
+  if (settingsButtonCooldown <= 0) {
+    const spawnWorldPos = new THREE.Vector3(); spawnToggleBtn.group.getWorldPosition(spawnWorldPos);
+    const wavesWorldPos = new THREE.Vector3(); wavesToggleBtn.group.getWorldPosition(wavesWorldPos);
+    const teleportWorldPos = new THREE.Vector3(); teleportToggleBtn.group.getWorldPosition(teleportWorldPos);
+
+    for (const cp of controllerWorldPositions) {
+      if (cp.distanceTo(spawnWorldPos) < 0.11) {
+        gameSettings.spawningEnabled = !gameSettings.spawningEnabled;
+        refreshSettingsLabels();
+        settingsButtonCooldown = 0.4;
+        break;
+      }
+      if (cp.distanceTo(wavesWorldPos) < 0.11) {
+        if (gameSettings.wavesEnabled) stopWaves(); else startWaves();
+        refreshSettingsLabels();
+        settingsButtonCooldown = 0.4;
+        break;
+      }
+      if (cp.distanceTo(teleportWorldPos) < 0.11) {
+        gameSettings.teleportEnabled = !gameSettings.teleportEnabled;
+        refreshSettingsLabels();
+        settingsButtonCooldown = 0.4;
+        break;
+      }
+    }
+  }
+
+  // slider: touching near the track sets the cooldown proportionally to touch position
+  for (const cp of controllerWorldPositions) {
+    sliderGroup.worldToLocal(settingsLocalPos.copy(cp));
+    if (Math.abs(settingsLocalPos.y) < 0.09 && Math.abs(settingsLocalPos.z) < 0.09) {
+      const t = THREE.MathUtils.clamp((settingsLocalPos.x + sliderTrackWidth / 2) / sliderTrackWidth, 0, 1);
+      gameSettings.teleportCooldown = THREE.MathUtils.clamp(
+        THREE.MathUtils.lerp(TELEPORT_COOLDOWN_MIN, TELEPORT_COOLDOWN_MAX, t),
+        TELEPORT_COOLDOWN_MIN, TELEPORT_COOLDOWN_MAX
+      );
+      updateSliderHandlePosition();
+      redrawSliderLabel();
+      break;
+    }
+  }
+}
+
+// periodically refresh the waves label so the wave counter stays current even without a toggle press
+let settingsLabelRefreshTimer = 0;
+
+// ================================================================
+// Face buttons (X/Y on left controller, A/B on right controller)
+// xr-standard gamepad mapping: buttons[4] = X (left) / A (right), buttons[5] = Y (left) / B (right)
+// ================================================================
+const TAP_WINDOW = 2.0;   // seconds
+const TAPS_REQUIRED = 3;
+const SPAWN_FORWARD_OFFSET = 0.12; // spawn slightly in front of the palm so it doesn't overlap the hand
+
+function getHandForwardSpawnPos(controller) {
+  const { pos, quat } = getControllerWorldPose(controller);
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  return pos.clone().addScaledVector(dir, SPAWN_FORWARD_OFFSET);
+}
+
+function registerTap(controller, now) {
+  const times = controller.userData.tapTimes;
+  times.push(now);
+  while (times.length > 0 && now - times[0] > TAP_WINDOW) times.shift();
+  return times.length >= TAPS_REQUIRED;
+}
+
+function updateFaceButtons(now) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+
+  for (const source of session.inputSources) {
+    if (!source.gamepad) continue;
+    const controller = controllers.find(c => c.userData.handedness === source.handedness);
+    if (!controller) continue;
+
+    const buttons = source.gamepad.buttons;
+    // xr-standard mapping: index 4 = X on the left controller / A on the right controller.
+    //                       index 5 = Y on the left controller / B on the right controller.
+    const xOrABtn = buttons[4];
+    const yOrBBtn = buttons[5];
+    const prev = controller.userData.prevButtons;
+
+    const xOrAPressed = !!(xOrABtn && xOrABtn.pressed);
+    const yOrBPressed = !!(yOrBBtn && yOrBBtn.pressed);
+    const prevXOrA = prev[4] || false;
+    const prevYOrB = prev[5] || false;
+    const justPressedXOrA = xOrAPressed && !prevXOrA;
+    const justPressedYOrB = yOrBPressed && !prevYOrB;
+    const justReleasedXOrA = !xOrAPressed && prevXOrA;
+
+    // Y (left controller) triple-tap within 2s -> spawn a cube at that hand.
+    if (source.handedness === 'left' && justPressedYOrB) {
+      if (registerTap(controller, now)) {
+        spawnCubeAtPosition(getHandForwardSpawnPos(controller));
+        controller.userData.tapTimes.length = 0;
+      }
+    }
+
+    // X/A: teleport aim + fire (moved off the trigger, which now shoots). Held while aiming,
+    // release to teleport — same behavior the trigger used to have.
+    if (justPressedXOrA) {
+      controller.userData.isSelecting = true;
+    }
+    if (justReleasedXOrA) {
+      controller.userData.isSelecting = false;
+      if (gameSettings.teleportEnabled && controller.userData.teleportValid && controller.userData.teleportCooldown <= 0) {
+        rig.position.x = controller.userData.teleportPoint.x;
+        rig.position.z = controller.userData.teleportPoint.z;
+        rig.position.y = getGroundHeight(rig.position.x, rig.position.z);
+        playerVerticalVelocity = 0;
+        playerGrounded = true;
+        controller.userData.teleportCooldown = gameSettings.teleportCooldown;
+      }
+      teleportMarker.visible = false;
+      teleportLine.visible = false;
+    }
+
+    prev[4] = xOrAPressed;
+    prev[5] = yOrBPressed;
+  }
+}
+
+// ================================================================
+// Locomotion (thumbsticks) + collision (player only — cubes use cannon-es)
+// ================================================================
+const TURN_SPEED = 2.0; // rad/sec
+const DEADZONE = 0.15;
+const MAX_STEP = 0.5; // max height change allowed per horizontal move while grounded -> blocks walking into the side of the ramp
+const worldUp = new THREE.Vector3(0, 1, 0);
+
+// Real vertical physics for the player (gravity + jump) instead of magnetically snapping to
+// ground height every frame. This is what lets the player jump off the slope's edge and fall,
+// or jump/fall down off the top platform, rather than being glued to whatever getGroundHeight()
+// reports directly beneath their x/z at all times.
+const PLAYER_GRAVITY = -9.82;
+const PLAYER_JUMP_SPEED = 4.2;
+let playerVerticalVelocity = 0;
+let playerGrounded = true;
+
+function applyDeadzone(v) { return Math.abs(v) < DEADZONE ? 0 : v; }
+
+function rotateRigAroundHead(angle) {
+  const pivot = new THREE.Vector3();
+  camera.getWorldPosition(pivot);
+  rig.position.sub(pivot);
+  rig.position.applyAxisAngle(worldUp, angle);
+  rig.rotation.y += angle;
+  rig.position.add(pivot);
+}
+
+function attemptAxisMove(axis, delta) {
+  const candidate = rig.position[axis] + delta;
+  const testX = axis === 'x' ? candidate : rig.position.x;
+  const testZ = axis === 'z' ? candidate : rig.position.z;
+
+  const halfBound = PLATFORM_SIZE / 2 - 0.3;
+  if (testX < -halfBound || testX > halfBound || testZ < -halfBound || testZ > halfBound) return;
+
+  // Only block horizontal movement into a steep ledge while grounded (walking into the side of
+  // the ramp). While airborne (jumping/falling) horizontal movement is never blocked by height
+  // differences, so the player can jump off the slope's edge or over its side instead of being
+  // stopped by an invisible wall.
+  if (playerGrounded) {
+    const curGroundH = getGroundHeight(rig.position.x, rig.position.z, rig.position.y);
+    const newGroundH = getGroundHeight(testX, testZ, rig.position.y);
+    if (Math.abs(newGroundH - curGroundH) > MAX_STEP) return;
+  }
+  rig.position[axis] = candidate;
+}
+
+function updateLocomotion(delta) {
+  let leftX = 0, leftY = 0, rightX = 0, rightY = 0;
+  let jumpPressed = false;
+  const session = renderer.xr.getSession();
+  if (session) {
+    for (const source of session.inputSources) {
+      if (!source.gamepad) continue;
+      const axes = source.gamepad.axes;
+      const x = axes.length >= 4 ? axes[2] : axes[0];
+      const y = axes.length >= 4 ? axes[3] : axes[1];
+      if (source.handedness === 'left') {
+        leftX = applyDeadzone(x || 0); leftY = applyDeadzone(y || 0);
+        // thumbstick click (xr-standard button index 3) = jump
+        const stickBtn = source.gamepad.buttons[3];
+        if (stickBtn && stickBtn.pressed && !source.gamepad.userJumpPrev) jumpPressed = true;
+        if (stickBtn) source.gamepad.userJumpPrev = stickBtn.pressed;
+      } else if (source.handedness === 'right') { rightX = applyDeadzone(x || 0); rightY = applyDeadzone(y || 0); }
+    }
+  }
+
+  // turning
+  if (rightX !== 0) {
+    rotateRigAroundHead(-rightX * TURN_SPEED * delta);
+  }
+
+  // moving, relative to where the player is looking (horizontal only)
+  if (leftX !== 0 || leftY !== 0) {
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    if (forward.lengthSq() > 0.0001) forward.normalize();
+    const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+
+    const moveX = (right.x * leftX + forward.x * -leftY) * MOVE_SPEED * delta;
+    const moveZ = (right.z * leftX + forward.z * -leftY) * MOVE_SPEED * delta;
+
+    attemptAxisMove('x', moveX);
+    attemptAxisMove('z', moveZ);
+  }
+
+  // jump
+  if (jumpPressed && playerGrounded) {
+    playerVerticalVelocity = PLAYER_JUMP_SPEED;
+    playerGrounded = false;
+  }
+
+  // vertical physics: integrate gravity, land on whatever ground is directly below once falling
+  // back down onto or below it (so the player can leave the ground on any side of the slope and
+  // fall until they land, rather than always being pinned to the local surface height).
+  playerVerticalVelocity += PLAYER_GRAVITY * delta;
+  rig.position.y += playerVerticalVelocity * delta;
+
+  const groundHere = getGroundHeight(rig.position.x, rig.position.z, rig.position.y);
+  if (rig.position.y <= groundHere) {
+    rig.position.y = groundHere;
+    playerVerticalVelocity = 0;
+    playerGrounded = true;
+  } else {
+    playerGrounded = false;
+  }
+}
+
+// ================================================================
+// Render / physics loop
+// ================================================================
+const clock = new THREE.Clock();
+const FIXED_TIMESTEP = 1 / 60;
+
+renderer.setAnimationLoop(() => {
+  const delta = Math.min(clock.getDelta(), 0.05);
+  simTime += delta;
+
+  updateLocomotion(delta);
+  updateFaceButtons(simTime);
+
+  // automatic fire while the trigger is held (rifle only; other guns are semi-auto, matched by
+  // their fireCooldown so holding the trigger for a pistol/sniper/shotgun just waits for the
+  // next allowed shot rather than double-firing)
+  for (const controller of controllers) {
+    if (!controller.userData.triggerHeld) continue;
+    const held = controller.userData.heldWeapon;
+    if (held && held.weapon.kind === 'rifle') tryFireHeldWeapon(controller);
+  }
+
+  // track controller linear/angular velocity (used for throwing) + move held cubes
+  for (const controller of controllers) {
+    const { pos: curPos, quat: curQuat } = getControllerWorldPose(controller);
+    if (controller.userData.prevPos) {
+      controller.userData.linearVelocity
+        .copy(curPos).sub(controller.userData.prevPos).divideScalar(Math.max(delta, 0.0001));
+      controller.userData.angularVelocity
+        .copy(computeAngularVelocity(controller.userData.prevQuat, curQuat, delta));
+    }
+    controller.userData.prevPos = curPos;
+    controller.userData.prevQuat = curQuat;
+
+    // teleport cooldown countdown
+    if (controller.userData.teleportCooldown > 0) {
+      controller.userData.teleportCooldown = Math.max(0, controller.userData.teleportCooldown - delta);
+    }
+
+    // drive the held cube/ball's kinematic body from the controller pose + grab offset
+    const held = controller.userData.heldCube;
+    if (held) {
+      const newPos = held.grabOffsetPos.clone().applyQuaternion(curQuat).add(curPos);
+      const newQuat = curQuat.clone().multiply(held.grabOffsetQuat);
+      held.body.position.set(newPos.x, newPos.y, newPos.z);
+      held.body.quaternion.set(newQuat.x, newQuat.y, newQuat.z, newQuat.w);
+    }
+  }
+
+  // drive held weapons (fixed hold for guns, weighted hand-lag for the sword)
+  driveHeldWeapons(delta);
+  updateSniperScopeZoom(delta);
+
+  // cooldown gauges
+  for (let i = 0; i < controllers.length; i++) {
+    const indicator = cooldownIndicators[i];
+    const cd = controllers[i].userData.teleportCooldown;
+    if (cd > 0) {
+      indicator.group.visible = true;
+      indicator.fill.scale.x = Math.max(0.001, 1 - cd / gameSettings.teleportCooldown);
+    } else {
+      indicator.group.visible = false;
+    }
+  }
+
+  // teleport aiming, only for whichever controller currently has trigger held
+  let aiming = false;
+  for (const controller of controllers) {
+    if (controller.userData.isSelecting) {
+      updateTeleportAim(controller);
+      aiming = true;
+    }
+  }
+  if (!aiming) {
+    teleportMarker.visible = false;
+    teleportLine.visible = false;
+  }
+
+  // step the physics world
+  world.step(FIXED_TIMESTEP, delta, 5);
+
+  // controller world positions, reused below for the grab-highlight check
+  const controllerWorldPositions = controllers.map(c => {
+    const p = new THREE.Vector3();
+    c.getWorldPosition(p);
+    return p;
+  });
+
+  // sync meshes with physics bodies + highlight, for both cubes and balls
+  for (const itemState of grabbableItems) {
+    const mesh = itemState.mesh;
+    const body = itemState.body;
+
+    mesh.position.set(body.position.x, body.position.y, body.position.z);
+    mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+
+    if (itemState.grabbedBy) {
+      itemState.highlightAmount = THREE.MathUtils.lerp(itemState.highlightAmount, 0, 0.3);
+    } else {
+      let inReach = false;
+      for (const cp of controllerWorldPositions) {
+        if (cp.distanceTo(mesh.position) < GRAB_DISTANCE) { inReach = true; break; }
+      }
+      itemState.highlightAmount = THREE.MathUtils.lerp(itemState.highlightAmount, inReach ? 1 : 0, 0.25);
+    }
+
+    if (itemState.isGroupMesh) {
+      // group-based items (e.g. number plaques) don't have a single .material; slightly
+      // scale up instead as a lightweight highlight cue.
+      const s = 1 + 0.08 * itemState.highlightAmount;
+      mesh.scale.setScalar(s);
+    } else {
+      mesh.material.emissive.setRGB(
+        0.1 * itemState.highlightAmount,
+        0.9 * itemState.highlightAmount,
+        0.8 * itemState.highlightAmount
+      );
+      mesh.material.emissiveIntensity = itemState.highlightAmount;
+    }
+  }
+
+  // sync weapon meshes with their physics bodies (only for weapons not being fixed-driven this frame,
+  // fixed-driven ones were already positioned in driveHeldWeapons — this keeps thrown/dropped ones synced too)
+  for (const weapon of weapons) {
+    weapon.model.group.position.set(weapon.body.position.x, weapon.body.position.y, weapon.body.position.z);
+    weapon.model.group.quaternion.set(weapon.body.quaternion.x, weapon.body.quaternion.y, weapon.body.quaternion.z, weapon.body.quaternion.w);
+  }
+
+  // bullets: lifetime, sync mesh, detect craft-table hits
+  // (dummy damage from bullet impacts is handled by the generic cannon 'collide' listener on
+  // dummyBody, so all impact damage — bullets, thrown cubes/balls, thrown weapons — goes through
+  // one shared, velocity-based path)
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z);
+    b.mesh.quaternion.set(b.body.quaternion.x, b.body.quaternion.y, b.body.quaternion.z, b.body.quaternion.w);
+
+    let consumed = false;
+
+    // craft table hit: bullet close to the recipe button / table zone -> attempt craft
+    const bp = b.mesh.position;
+    const distToTable = bp.distanceTo(new THREE.Vector3(CRAFT_TABLE_POS.x, CRAFT_SURFACE_Y + CRAFT_TABLE_POS.y, CRAFT_TABLE_POS.z));
+    if (b.isBullet && distToTable < 0.75) {
+      tryCraftFromTable();
+      consumed = true;
+    }
+
+    // rocks: any bullet can mine them
+    if (!consumed) {
+      for (const rock of rocks) {
+        if (bp.distanceTo(rock.mesh.position) < rock.hitRadius) {
+          const speed = new THREE.Vector3(b.body.velocity.x, b.body.velocity.y, b.body.velocity.z).length();
+          damageRock(rock, speed * 1.2);
+          consumed = true;
+          break;
+        }
+      }
+    }
+
+    // creatures: any bullet (player rifle/sniper/pistol) can damage them
+    if (!consumed) {
+      for (const creature of creatures) {
+        if (creature.dead) continue;
+        const cPos = new THREE.Vector3();
+        creature.parts.group.getWorldPosition(cPos);
+        cPos.y += 0.6;
+        if (bp.distanceTo(cPos) < creature.hitRadius + 0.15) {
+          const speed = new THREE.Vector3(b.body.velocity.x, b.body.velocity.y, b.body.velocity.z).length();
+          damageCreature(creature, speed * 1.2, 1);
+          consumed = true;
+          break;
+        }
+      }
+    }
+
+    if (!consumed && simTime - b.spawnTime > BULLET_LIFETIME) consumed = true;
+
+    if (consumed) {
+      scene.remove(b.mesh);
+      world.removeBody(b.body);
+      bullets.splice(i, 1);
+    }
+  }
+
+  // melee collision damage (sword + pickaxe + iron hammer) against the dummy, rocks, and
+  // creatures: checked by direct distance every frame (in addition to the generic collide-event
+  // path) because the tip moves fast enough while kinematically hand-driven that it can tunnel
+  // past a single physics contact between frames. The sword deals 2x damage, the iron hammer
+  // deals 1.5x damage; the pickaxe does not get a bonus here (its bonus is rock-only, below).
+  for (const weapon of weapons) {
+    const isMelee = weapon.kind === 'sword' || weapon.kind === 'pickaxe' || weapon.kind === 'ironHammer';
+    if (!isMelee || weaponHandleCount(weapon) === 0) continue;
+    if (weapon.swingDamageCooldown > 0) continue;
+    const damageMultiplier = weapon.kind === 'sword' ? 2 : weapon.kind === 'ironHammer' ? 1.5 : 1;
+    const tipLocal = new THREE.Vector3(0, 0, weapon.model.tipLocalZ);
+    const tipWorld = tipLocal.applyQuaternion(weapon.model.group.quaternion).add(weapon.model.group.position);
+    const primaryController = weapon.heldBy.handle || weapon.heldBy.rear;
+    const vel = primaryController ? primaryController.userData.linearVelocity : new THREE.Vector3();
+
+    let hitSomething = false;
+
+    // dummy (fixed hit volume, as before)
+    const dyLocal = tipWorld.y - DUMMY_POS.y;
+    const dxz = Math.sqrt((tipWorld.x - DUMMY_POS.x) ** 2 + (tipWorld.z - DUMMY_POS.z) ** 2);
+    const nearTorso = dyLocal > 0.85 && dyLocal < 1.45 && dxz < 0.35;
+    const nearHead = dyLocal > 1.46 && dyLocal < 1.78 && dxz < 0.25;
+    if (nearTorso || nearHead) {
+      damageDummy(tipWorld, vel, simTime, damageMultiplier);
+      hitSomething = true;
+    }
+
+    // rocks: minable by any weapon; the pickaxe gets its own 1.5x bonus specifically against
+    // rocks (the sword's 2x bonus is for living targets, not stone)
+    if (!hitSomething) {
+      const rockMultiplier = weapon.kind === 'pickaxe' ? 1.5 : 1;
+      for (const rock of rocks) {
+        if (tipWorld.distanceTo(rock.mesh.position) < rock.hitRadius) {
+          damageRock(rock, vel.length() * 1.2 * rockMultiplier);
+          hitSomething = true;
+          break;
+        }
+      }
+    }
+
+    // creatures
+    if (!hitSomething) {
+      for (const creature of creatures) {
+        if (creature.dead) continue;
+        const cPos = new THREE.Vector3();
+        creature.parts.group.getWorldPosition(cPos);
+        cPos.y += 0.6;
+        if (tipWorld.distanceTo(cPos) < creature.hitRadius + 0.35) {
+          damageCreature(creature, vel.length() * 1.2, damageMultiplier);
+          hitSomething = true;
+          break;
+        }
+      }
+    }
+
+    if (hitSomething) weapon.swingDamageCooldown = 0.2; // 0.2s damage cooldown, as requested
+  }
+
+  // creature AI, projectiles, and wave progression
+  updateCreatures(delta);
+  updateGoblinArrows(delta);
+  updateHitmanBullets(delta);
+  updateWaves(delta);
+  updateRockRespawns();
+
+  // recipe select button: press by touching it with a hand sphere
+  if (recipeButtonCooldown > 0) recipeButtonCooldown = Math.max(0, recipeButtonCooldown - delta);
+  else {
+    const buttonWorldPos = new THREE.Vector3();
+    recipeButtonBase.getWorldPosition(buttonWorldPos);
+    for (const cp of controllerWorldPositions) {
+      if (cp.distanceTo(buttonWorldPos) < 0.09) {
+        cycleRecipe();
+        recipeButtonCooldown = 0.5;
+        break;
+      }
+    }
+  }
+
+  // settings board: toggles + teleport-cooldown slider
+  updateSettingsBoard(controllerWorldPositions, delta);
+  settingsLabelRefreshTimer -= delta;
+  if (settingsLabelRefreshTimer <= 0) {
+    settingsLabelRefreshTimer = 0.5;
+    refreshSettingsLabels();
+    drawHud(); // keep the ammo readout current even when health hasn't changed
+  }
+
+  // floating damage popups: drift upward and fade out
+  for (let i = damagePopups.length - 1; i >= 0; i--) {
+    const p = damagePopups[i];
+    p.life -= delta * 0.9;
+    p.sprite.position.y += delta * 0.6;
+    p.sprite.material.opacity = Math.max(0, p.life);
+    if (p.life <= 0) {
+      scene.remove(p.sprite);
+      damagePopups.splice(i, 1);
+    }
+  }
+
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
